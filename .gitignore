@@ -1,3 +1,7 @@
+# Pickled objects and data files
+*.pkl
+*.xlsx
+
 # IDE
 /.idea
 /.idea/inspectionProfiles
