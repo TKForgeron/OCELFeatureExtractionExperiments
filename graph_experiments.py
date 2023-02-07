@@ -77,22 +77,6 @@ ocel = csv_import_factory.apply(
     filename, csv_import_factory.TO_OCEL, parameters, file_path_object_attribute_table
 )
 
-with open(f"data/processed/BPI2017-ocel.pkl", "wb") as file:
-    pickle.dump(ocel, file)
-
-with open(f"data/processed/BPI2017-ocel.pkl", "rb") as file:
-    ocel = pickle.load(file)
-
-# # Takes ~25 seconds
-# event_df = csv_import_factory.apply(
-#     filename, csv_import_factory.TO_DF, parameters=parameters
-# )
-
-# # Takes ~3 minutes
-# obj = convert_factory.apply(
-#     event_df.iloc[:, 0:44999], variant=convert_factory.DF_TO_OCEL, parameters=parameters
-# )
-
 activities = list(set(ocel.log.log["event_activity"].tolist()))
 feature_set = [
     (feature_extractor.EVENT_REMAINING_TIME, ()),
@@ -101,14 +85,20 @@ feature_set = [
 ] + [(feature_extractor.EVENT_PRECEDING_ACTIVITES, (act,)) for act in activities]
 feature_storage = feature_extractor.apply(ocel, feature_set, [])
 
-# Pickle feature storage object
-with open(f"data/processed/BPI2017-feature_storage.pkl", "wb") as file:
-    pickle.dump(feature_storage, file)
+# # Pickle feature storage objects
+# with open(f"data/processed/BPI2017-feature_storage.pkl", "wb") as file:
+#     pickle.dump(feature_storage, file)
+
+# with open(f"data/processed/BPI2017-ocel.pkl", "wb") as file:
+#     pickle.dump(ocel, file)
 
 
-# Load pickled feature storage object
-with open(f"data/processed/BPI2017-feature_storage.pkl", "rb") as file:
-    feature_storage = pickle.load(file)
+# # Load pickled feature storage objects
+# with open(f"data/processed/BPI2017-feature_storage.pkl", "rb") as file:
+#     feature_storage = pickle.load(file)
+
+# with open(f"data/processed/BPI2017-ocel.pkl", "rb") as file:
+#     ocel = pickle.load(file)
 
 feature_storage.extract_normalized_train_test_split(0.3, state=42)
 
@@ -120,9 +110,7 @@ for g in tqdm(feature_storage.feature_graphs):
     events_to_remove = events_to_remove + event_ids[:3]
 
 label_order = None
-
 accuracy_dict = {}
-
 
 train_idx, val_idx = train_test_split(feature_storage.training_indices, test_size=0.2)
 x_train, y_train = generate_graph_dataset(
