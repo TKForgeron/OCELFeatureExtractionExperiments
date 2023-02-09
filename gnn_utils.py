@@ -13,9 +13,10 @@ from dgl.nn import GraphConv
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 from copy import deepcopy
+from ocpa.objects.log.ocel import OCEL
 
 # create graph dataset & labels for remaining time regression
-def generate_graph_dataset(feature_graph_list, indices, ocel_object):
+def generate_graph_dataset(feature_graph_list, indices, ocel: OCEL):
 
     idx = indices
     graph_list = []
@@ -26,7 +27,7 @@ def generate_graph_dataset(feature_graph_list, indices, ocel_object):
         graph = deepcopy(feature_graph_list[gid])
 
         # sort nodes according to timestamp
-        instance_df = ocel_object.log.loc[[n.event_id for n in graph.nodes]].copy()
+        instance_df = ocel.log.log.loc[[n.event_id for n in graph.nodes]].copy()
         instance_df = instance_df.sort_values("event_timestamp")
         node_id_map = {id: i for i, id in enumerate(instance_df.index)}
 
