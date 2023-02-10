@@ -1,6 +1,18 @@
+# PyG dataset files
+*.pt
+
 # Pickled objects and data files
 *.pkl
 *.xlsx
+
+# Resources
+*.pptx
+*.csv
+*.pickle
+*.zip
+*.png
+*.json
+*.jsonocel
 
 # IDE
 /.idea
@@ -24,15 +36,6 @@ venv.bak/
 .pyre_configuration
 .watchmanconfig
 .pyre/
-
-# Resources
-*.pptx
-*.csv
-*.pickle
-*.zip
-*.png
-*.json
-*.jsonocel
 
 ## Vue.js frontend
 /src/.idea

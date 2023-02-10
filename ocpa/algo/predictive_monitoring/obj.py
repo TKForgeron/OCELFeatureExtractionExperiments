@@ -4,11 +4,11 @@ import random
 
 
 class Feature_Storage:
-    '''
+    """
     The Feature Storage class stores features extracted for an obejct-centric event log. It stores it in form of feature
     graphs: Each feature graph contains the features for a process execution in form of labeled nodes and graph properties.
     Furthermore, the class provides the possibility to create a training/testing split on the basis of the graphs.
-    '''
+    """
 
     class Feature_Graph:
         class Node:
@@ -28,6 +28,7 @@ class Feature_Storage:
 
             def _get_event_id(self):
                 return self._event
+
             event_id = property(_get_event_id)
             attributes = property(_get_attributes)
             objects = property(_get_objects)
@@ -61,17 +62,30 @@ class Feature_Storage:
 
         def __init__(self, case_id, graph, ocel):
             self._case_id = case_id
-            self._nodes = [Feature_Storage.Feature_Graph.Node(e_id, ocel.get_value(e_id, "event_objects")) for e_id in
-                           graph.nodes]
-            #self._nodes = [Feature_Storage.Feature_Graph.Node(e_id, ocel.log.loc[e_id]["event_objects"]) for e_id in graph.nodes]
+            self._nodes = [
+                Feature_Storage.Feature_Graph.Node(
+                    e_id, ocel.get_value(e_id, "event_objects")
+                )
+                for e_id in graph.nodes
+            ]
+            # self._nodes = [Feature_Storage.Feature_Graph.Node(e_id, ocel.log.loc[e_id]["event_objects"]) for e_id in graph.nodes]
             self._node_mapping = {node.event_id: node for node in self._nodes}
-            self._objects = {(source, target): set(ocel.get_value(source, "event_objects")).intersection(
-                set(ocel.get_value(target, "event_objects"))) for source, target in graph.edges}
-            #self._objects = {(source,target):set(ocel.log.loc[source]["event_objects"]).intersection(set(ocel.log.loc[target]["event_objects"])) for source,target in graph.edges}
-            self._edges = [Feature_Storage.Feature_Graph.Edge(
-                source, target, objects=self._objects[(source, target)])for source, target in graph.edges]
+            self._objects = {
+                (source, target): set(
+                    ocel.get_value(source, "event_objects")
+                ).intersection(set(ocel.get_value(target, "event_objects")))
+                for source, target in graph.edges
+            }
+            # self._objects = {(source,target):set(ocel.log.loc[source]["event_objects"]).intersection(set(ocel.log.loc[target]["event_objects"])) for source,target in graph.edges}
+            self._edges = [
+                Feature_Storage.Feature_Graph.Edge(
+                    source, target, objects=self._objects[(source, target)]
+                )
+                for source, target in graph.edges
+            ]
             self._edge_mapping = {
-                (edge.source, edge.target): edge for edge in self._edges}
+                (edge.source, edge.target): edge for edge in self._edges
+            }
             self._attributes = {}
 
         def _get_nodes(self):
@@ -87,8 +101,12 @@ class Feature_Storage:
             return self._attributes
 
         def replace_edges(self, edges):
-            self._edges = [Feature_Storage.Feature_Graph.Edge(
-                source.event_id, target.event_id, objects=[]) for source, target in edges]
+            self._edges = [
+                Feature_Storage.Feature_Graph.Edge(
+                    source.event_id, target.event_id, objects=[]
+                )
+                for source, target in edges
+            ]
 
         def get_node_from_event_id(self, event_id):
             return self._node_mapping[event_id]
@@ -110,6 +128,7 @@ class Feature_Storage:
         self._case_features = execution_features
         self._feature_graphs = []
         self._scaler = None
+        self._graph_indices: list[int] = None
         self._training_indices = None
         self._test_indices = None
 
@@ -144,8 +163,7 @@ class Feature_Storage:
         return self._scaler
 
     event_features = property(_get_event_features, _set_event_features)
-    execution_features = property(
-        _get_execution_features, _set_execution_features)
+    execution_features = property(_get_execution_features, _set_execution_features)
     feature_graphs = property(_get_feature_graphs, _set_feature_graphs)
     training_indices = property(_get_training_indices)
     test_indices = property(_get_test_indices)
@@ -157,25 +175,26 @@ class Feature_Storage:
         dict_list = []
         for g in feature_graphs:
             for node in g.nodes:
-                dict_list.append(
-                    {**{"event_id": node.event_id}, **node.attributes})
+                dict_list.append({**{"event_id": node.event_id}, **node.attributes})
                 # print(node.attributes)
         df = pd.DataFrame(dict_list)
         return df
 
     def _create_mapper(self, table):
         arr = table.to_numpy()
-        column_mapping = {k: v for v, k in enumerate(
-            list(table.columns.values))}
+        column_mapping = {k: v for v, k in enumerate(list(table.columns.values))}
         mapper = dict()
         for row in arr:
             e_id = row[column_mapping["event_id"]]
-            mapper[e_id] = {k: row[column_mapping[k]]
-                            for k in column_mapping.keys() if k != "event_id"}
+            mapper[e_id] = {
+                k: row[column_mapping[k]]
+                for k in column_mapping.keys()
+                if k != "event_id"
+            }
         return mapper
 
     def extract_normalized_train_test_split(self, test_size, state=1):
-        '''
+        """
         Splits and normalizes the feature storage. Each split is normalized according to it's member, i.e., the testing
         set is not normalized with information of the training set. The splitting information is stored in form of
         index lists as properties of the feature storage object.
@@ -186,25 +205,28 @@ class Feature_Storage:
         :type state: int
 
 
-        '''
+        """
 
-        graphs_indices = list(range(0, len(self.feature_graphs)))
-        random.Random(state).shuffle(graphs_indices)
-        split_index = int((1-test_size)*len(graphs_indices))
+        self.graph_indices = list(range(0, len(self.feature_graphs)))
+        random.Random(state).shuffle(self.graph_indices)
+        split_index = int((1 - test_size) * len(self.graph_indices))
         # print(split_index)
-        self._training_indices = graphs_indices[:split_index]
-        self._test_indices = graphs_indices[split_index:]
-        train_graphs, test_graphs = [self.feature_graphs[i] for i in self._training_indices], [
-            self.feature_graphs[i] for i in self._test_indices]
+        self._training_indices = self.graph_indices[:split_index]
+        self._test_indices = self.graph_indices[split_index:]
+        train_graphs, test_graphs = [
+            self.feature_graphs[i] for i in self._training_indices
+        ], [self.feature_graphs[i] for i in self._test_indices]
         # Normalize
         features = self.event_features
         train_table = self._event_id_table(train_graphs)
         test_table = self._event_id_table(test_graphs)
         scaler = StandardScaler()
         train_table[self.event_features] = scaler.fit_transform(
-            train_table[self.event_features])
+            train_table[self.event_features]
+        )
         test_table[self.event_features] = scaler.transform(
-            test_table[self.event_features])
+            test_table[self.event_features]
+        )
         self._scaler = scaler
         # update features features
         # for efficiency
