@@ -1,5 +1,4 @@
-# DO NOT IGNORE THIS (DO UPLOAD)
-!BPI2017-Final.csv
+# Scroll down to see 'DO NOT IGNORE' files
 
 # PyG dataset files
 *.pt
@@ -75,3 +74,6 @@ venv.bak/
 
 /build
 /dist
+
+# DO NOT IGNORE THIS (DO UPLOAD)
+!BPI2017-Final.csv
