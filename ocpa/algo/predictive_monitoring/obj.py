@@ -126,9 +126,9 @@ class Feature_Storage:
         self._event_features = event_features
         self._edge_features = []
         self._case_features = execution_features
-        self._feature_graphs = []
+        self._feature_graphs: list[self.Feature_Graph] = []
         self._scaler = None
-        self._graph_indices: list[int] = None
+        # self._graph_indices: list[int] = None
         self._training_indices = None
         self._test_indices = None
 
@@ -207,12 +207,13 @@ class Feature_Storage:
 
         """
 
-        self.graph_indices = list(range(0, len(self.feature_graphs)))
-        random.Random(state).shuffle(self.graph_indices)
-        split_index = int((1 - test_size) * len(self.graph_indices))
+        # self.graph_indices = list(range(0, len(self.feature_graphs)))
+        graph_indices = list(range(0, len(self.feature_graphs)))
+        random.Random(state).shuffle(graph_indices)
+        split_index = int((1 - test_size) * len(graph_indices))
         # print(split_index)
-        self._training_indices = self.graph_indices[:split_index]
-        self._test_indices = self.graph_indices[split_index:]
+        self._training_indices = graph_indices[:split_index]
+        self._test_indices = graph_indices[split_index:]
         train_graphs, test_graphs = [
             self.feature_graphs[i] for i in self._training_indices
         ], [self.feature_graphs[i] for i in self._test_indices]

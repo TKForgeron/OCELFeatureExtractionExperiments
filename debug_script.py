@@ -1,11 +1,15 @@
-# import os
-
-# os.chdir("c:\\Users\\Tim\\Development\\OCELFeatureExtractionExperiments\\")
-# print(os.getcwd())
-# Py Geometric
 from ocpa_PyG_integration.PyG_dataset import EventGraphDataset
 
-ds = EventGraphDataset(
+ds_train = EventGraphDataset(
     root="data/ocpa-processed/",
     filename="BPI2017-feature_storage_split.pkl",
+    label_key=("event_remaining_time", ()),
+    train=True,
+)
+
+ds_test = EventGraphDataset(
+    root="data/ocpa-processed/",
+    filename="BPI2017-feature_storage_split.pkl",
+    label_key=("event_remaining_time", ()),
+    test=True,
 )
