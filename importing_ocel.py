@@ -38,7 +38,7 @@ parameters = {
     "act_name": "event_activity",
     "time_name": "event_timestamp",
     "sep": ",",
-    "take_sample": 9999,
+    # "take_sample": 9999,
 }
 file_path_object_attribute_table = None
 

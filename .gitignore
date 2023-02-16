@@ -77,3 +77,4 @@ venv.bak/
 
 # DO NOT IGNORE THIS (DO UPLOAD)
 !BPI2017-Final.csv
+!models/*

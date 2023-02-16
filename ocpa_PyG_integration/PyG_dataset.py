@@ -13,17 +13,10 @@ print(f"Torch version: {torch.__version__}")
 print(f"Cuda available: {torch.cuda.is_available()}")
 print(f"Torch geometric version: {torch_geometric.__version__}")
 
-"""
-!!!
-NOTE: This file was replaced by dataset_featurizer.py
-but is kept to illustrate how to build a custom dataset in PyG.
-!!!
-"""
-
 
 class EventGraphDataset(Dataset):
     """
-    Class that serves as an interface between ocpa and PyG.
+    Class that serves as an adapter/bridge between ocpa and PyG.
 
     Specifically, it imports from a Feature_Storage class and works with PyG for implementing a GNN.
     """
@@ -35,6 +28,7 @@ class EventGraphDataset(Dataset):
         label_key: str,
         train: bool = False,
         test: bool = False,
+        verbosity: int = 1,
         transform=None,
         pre_transform=None,
     ):
@@ -56,6 +50,7 @@ class EventGraphDataset(Dataset):
         self.train = train
         self.test = test
         self.filename = filename
+        self._verbosity = verbosity
         super(EventGraphDataset, self).__init__(root, transform, pre_transform)
 
         # print(f"TRACE: EventGraphDataset.__init__(root={root}, filename={filename})")
@@ -97,25 +92,38 @@ class EventGraphDataset(Dataset):
         #   do not give a tag to files that are being saved to disk
 
         if self.train:
+            # Retrieve graphs with train indices
             train_graphs = [
                 self.data.feature_graphs[i] for i in self.data.training_indices
             ]
+            # Set Dataset size
             self._set_size(len(train_graphs))
-            for index, feature_graph in tqdm(enumerate(train_graphs)):
+            # Save each graph instance
+            for index, feature_graph in self.__custom_verbosity_enumerate(
+                train_graphs, self._verbosity
+            ):
                 self._write_graph_to_disk(
                     graph=feature_graph,
                     filename=f"data_train_{index}.pt",
                 )
         elif self.test:
+            # Retrieve graphs with test indices
             test_graphs = [self.data.feature_graphs[i] for i in self.data.test_indices]
+            # Set Dataset size
             self._set_size(len(test_graphs))
-            for index, feature_graph in tqdm(enumerate(test_graphs)):
+            # Save each graph instance
+            for index, feature_graph in self.__custom_verbosity_enumerate(
+                test_graphs, self._verbosity
+            ):
                 self._write_graph_to_disk(
                     graph=feature_graph,
                     filename=f"data_test_{index}.pt",
                 )
         else:
-            for index, feature_graph in tqdm(enumerate(self.data.feature_graphs)):
+            # Save each graph instance
+            for index, feature_graph in self.__custom_verbosity_enumerate(
+                self.data.feature_graphs, self._verbosity
+            ):
                 self._write_graph_to_disk(
                     graph=feature_graph,
                     filename=f"data_{index}.pt",
@@ -214,6 +222,13 @@ class EventGraphDataset(Dataset):
     def _set_size(self, size: int) -> None:
         """Set the number of graphs stored in this EventGraphDataset object."""
         self._size = size
+
+    def __custom_verbosity_enumerate(self, iterable, miniters: int):
+        """Return either just the enumerated iterable, or one with the progress tracked."""
+        if self._verbosity:
+            return tqdm(enumerate(iterable), miniters=miniters)
+        else:
+            return enumerate(iterable)
 
     def len(self) -> int:
         if self.train or self.test:
