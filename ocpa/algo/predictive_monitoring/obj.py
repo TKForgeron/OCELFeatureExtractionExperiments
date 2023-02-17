@@ -1,5 +1,4 @@
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
 import random
 
 
@@ -122,12 +121,12 @@ class Feature_Storage:
         edges = property(_get_edges)
         objects = property(_get_objects)
 
-    def __init__(self, event_features, execution_features, ocel):
+    def __init__(self, event_features, execution_features, ocel, scaler):
         self._event_features = event_features
         self._edge_features = []
         self._case_features = execution_features
         self._feature_graphs: list[self.Feature_Graph] = []
-        self._scaler = None
+        self._scaler = scaler
         # self._graph_indices: list[int] = None
         self._training_indices = None
         self._test_indices = None
@@ -221,7 +220,7 @@ class Feature_Storage:
         features = self.event_features
         train_table = self._event_id_table(train_graphs)
         test_table = self._event_id_table(test_graphs)
-        scaler = StandardScaler()
+        scaler = self.scaler()
         train_table[self.event_features] = scaler.fit_transform(
             train_table[self.event_features]
         )
