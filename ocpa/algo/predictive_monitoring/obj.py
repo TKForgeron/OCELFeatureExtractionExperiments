@@ -1,6 +1,7 @@
 import pandas as pd
 import random
 from copy import copy
+import pickle
 
 
 class Feature_Storage:
@@ -128,7 +129,6 @@ class Feature_Storage:
         execution_features: list,
         ocel,
         scaler,
-        target_label: tuple,
     ):
         self._event_features = event_features
         self._edge_features = []
@@ -138,13 +138,19 @@ class Feature_Storage:
         # self._graph_indices: list[int] = None
         self._training_indices = None
         self._test_indices = None
-        self.target_label = target_label
+        self._target_label = None
 
     def _get_event_features(self):
         return self._event_features
 
     def _set_event_features(self, event_features):
         self._event_features = event_features
+
+    def _get_execution_features(self):
+        return self._case_features
+
+    def _set_execution_features(self, execution_features):
+        self._case_features = execution_features
 
     def _get_feature_graphs(self):
         return self._feature_graphs
@@ -155,11 +161,11 @@ class Feature_Storage:
     def add_feature_graph(self, feature_graph):
         self.feature_graphs += [feature_graph]
 
-    def _get_execution_features(self):
-        return self._case_features
+    def _get_scaler(self):
+        return self._scaler
 
-    def _set_execution_features(self, execution_features):
-        self._case_features = execution_features
+    def _set_scaler(self, scaler):
+        self._scaler = scaler
 
     def _get_training_indices(self):
         return self._training_indices
@@ -167,15 +173,19 @@ class Feature_Storage:
     def _get_test_indices(self):
         return self._test_indices
 
-    def _get_scaler(self):
-        return self._scaler
+    def _get_target_label(self):
+        return self._target_label
+
+    def _set_target_label(self, target_label):
+        self._target_label = target_label
 
     event_features = property(_get_event_features, _set_event_features)
     execution_features = property(_get_execution_features, _set_execution_features)
     feature_graphs = property(_get_feature_graphs, _set_feature_graphs)
+    scaler = property(_get_scaler, _set_scaler)
     training_indices = property(_get_training_indices)
     test_indices = property(_get_test_indices)
-    scaler = property(_get_scaler)
+    target_label = property(_get_target_label, _set_target_label)
 
     def _event_id_table(self, feature_graphs):
         features = self.event_features
@@ -201,7 +211,9 @@ class Feature_Storage:
             }
         return mapper
 
-    def extract_normalized_train_test_split(self, test_size, state=1):
+    def extract_normalized_train_test_split(
+        self, test_size: float, target_label: tuple, state: int = 42
+    ):
         """
         Splits and normalizes the feature storage. Each split is normalized according to it's member, i.e., the testing
         set is not normalized with information of the training set. The splitting information is stored in form of
@@ -215,33 +227,30 @@ class Feature_Storage:
 
         """
 
-        # self.graph_indices = list(range(0, len(self.feature_graphs)))
         graph_indices = list(range(0, len(self.feature_graphs)))
         random.Random(state).shuffle(graph_indices)
         split_index = int((1 - test_size) * len(graph_indices))
-        # print(split_index)
         self._training_indices = graph_indices[:split_index]
         self._test_indices = graph_indices[split_index:]
+
         train_graphs, test_graphs = [
             self.feature_graphs[i] for i in self._training_indices
         ], [self.feature_graphs[i] for i in self._test_indices]
-        # Normalize
+        # Normalize (except for target variable)
         train_table = self._event_id_table(train_graphs)
         test_table = self._event_id_table(test_graphs)
-        import pickle
-
-        with open("data/test_table.pkl", "wb") as file:
-            pickle.dump(test_table, file)
-        scaler = self.scaler
-        # DO event_features minus y-label
+        scaler = self.scaler()
+        self._set_target_label(target_label)
+        self.event_features.remove(
+            self.target_label
+        )  # rm y-label s.t. its excluded from scaling
         train_table[self.event_features] = scaler.fit_transform(
-            train_table[self.event_features]
+            X=train_table[self.event_features]
         )
-
         test_table[self.event_features] = scaler.transform(
-            test_table[self.event_features]
+            X=test_table[self.event_features]
         )
-        self._scaler = scaler
+        self._set_scaler(scaler)
         # update features features
         # for efficiency
         train_mapper = self._create_mapper(train_table)

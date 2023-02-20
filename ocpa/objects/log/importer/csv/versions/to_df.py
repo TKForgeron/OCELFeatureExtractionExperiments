@@ -8,7 +8,7 @@ def apply(
 ) -> pd.DataFrame:
     if parameters is None:
         raise ValueError("Specify parsing parameters")
-    df = pd.read_csv(filepath, parameters["sep"])
+    df = pd.read_csv(filepath, sep=parameters["sep"])
     obj_cols = parameters["obj_names"]
 
     def _eval(x):

@@ -15,11 +15,11 @@ def apply(filepath, parameters: dict, file_path_object_attribute_table=None) -> 
         obj_df = pd.read_csv(file_path_object_attribute_table)
 
     log = Table(df, parameters=parameters, object_attributes=obj_df)
-    print("Table format successfully imported")
+    # print("Table format successfully imported")
     obj = obj_converter.apply(df)
-    print("Object format successfully imported")
+    # print("Object format successfully imported")
     graph = EventGraph(table_utils.eog_from_log(log))
-    print("Graph format successfully imported")
+    # print("Graph format successfully imported")
     ocel = OCEL(log, obj, graph, parameters)
-    print("OCEL constructed")
+    # print("OCEL constructed")
     return ocel

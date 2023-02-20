@@ -28,10 +28,8 @@ from sklearn.preprocessing import StandardScaler
 #     # evaluate_gnn,
 # )
 
-STORAGE_PATH = "data/ocpa-processed/raw/"
-RANDOM_SEED = 42
-SAMPLE_SIZE = 9999
-TARGET_LABEL = feature_factory.EVENT_REMAINING_TIME
+# Global variables
+from experiment_config import STORAGE_PATH, RANDOM_SEED, TARGET_LABEL
 
 filename = "example_logs/mdl/BPI2017-Final.csv"
 object_types = ["application", "offer"]
@@ -50,7 +48,7 @@ ocel = csv_import_factory.apply(
 
 activities = list(set(ocel.log.log["event_activity"].tolist()))
 feature_set = [
-    (feature_factory.EVENT_REMAINING_TIME, ()),
+    TARGET_LABEL,
     (feature_factory.EVENT_PREVIOUS_TYPE_COUNT, ("GDSRCPT",)),
     (feature_factory.EVENT_ELAPSED_TIME, ()),
 ] + [(feature_factory.EVENT_PRECEDING_ACTIVITES, (act,)) for act in activities]
@@ -61,10 +59,11 @@ feature_storage = feature_factory.apply(
     event_based_features=feature_set,
     execution_based_features=[],
 )
+feature_storage.extract_normalized_train_test_split(
+    test_size=0.3, target_label=TARGET_LABEL, state=RANDOM_SEED
+)
 
-feature_storage.extract_normalized_train_test_split(0.3, state=RANDOM_SEED)
-
-with open(f"{STORAGE_PATH}BPI2017-feature_storage.pkl", "wb") as file:
+with open(f"{STORAGE_PATH}BPI2017-feature_storage-split.pkl", "wb") as file:
     pickle.dump(feature_storage, file)
 
 # # keep list of first three events for comparability of regression use case
