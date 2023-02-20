@@ -1,5 +1,6 @@
 import pandas as pd
 import random
+from copy import copy
 
 
 class Feature_Storage:
@@ -121,7 +122,14 @@ class Feature_Storage:
         edges = property(_get_edges)
         objects = property(_get_objects)
 
-    def __init__(self, event_features, execution_features, ocel, scaler):
+    def __init__(
+        self,
+        event_features: list,
+        execution_features: list,
+        ocel,
+        scaler,
+        target_label: tuple,
+    ):
         self._event_features = event_features
         self._edge_features = []
         self._case_features = execution_features
@@ -130,6 +138,7 @@ class Feature_Storage:
         # self._graph_indices: list[int] = None
         self._training_indices = None
         self._test_indices = None
+        self.target_label = target_label
 
     def _get_event_features(self):
         return self._event_features
@@ -217,13 +226,18 @@ class Feature_Storage:
             self.feature_graphs[i] for i in self._training_indices
         ], [self.feature_graphs[i] for i in self._test_indices]
         # Normalize
-        features = self.event_features
         train_table = self._event_id_table(train_graphs)
         test_table = self._event_id_table(test_graphs)
-        scaler = self.scaler()
+        import pickle
+
+        with open("data/test_table.pkl", "wb") as file:
+            pickle.dump(test_table, file)
+        scaler = self.scaler
+        # DO event_features minus y-label
         train_table[self.event_features] = scaler.fit_transform(
             train_table[self.event_features]
         )
+
         test_table[self.event_features] = scaler.transform(
             test_table[self.event_features]
         )

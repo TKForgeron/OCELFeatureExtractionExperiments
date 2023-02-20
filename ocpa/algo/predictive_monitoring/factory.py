@@ -98,6 +98,7 @@ VERSIONS = {
 def apply(
     ocel,
     scaler,
+    target_label: str,
     event_based_features=[],
     execution_based_features=[],
     event_attributes=[],
@@ -136,6 +137,10 @@ def apply(
 
     """
 
+    target_label_version = _determine_target_feature_version(
+        target_label
+    )  # determine whether y-label is event based or execution based
+
     s_time = time.time()
     ocel.log.log["event_objects"] = ocel.log.log.apply(
         lambda x: [(ot, o) for ot in ocel.object_types for o in x[ot]], axis=1
@@ -146,6 +151,7 @@ def apply(
         execution_features=execution_based_features,
         ocel=ocel,
         scaler=scaler,
+        target_label=(target_label_version, target_label),
     )
     object_f_time = time.time() - s_time
     id = 0
@@ -202,3 +208,10 @@ def apply(
     # print("Subgraph Features " + str(subgraph_time))
     # print("prep time " + str(object_f_time))
     return feature_storage
+
+
+def _determine_target_feature_version(target_label: str) -> str:
+    if target_label in VERSIONS[EVENT_BASED]:
+        return EVENT_BASED
+    elif target_label in VERSIONS[EXECUTION_BASED]:
+        return EXECUTION_BASED
