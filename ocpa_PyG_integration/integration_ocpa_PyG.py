@@ -7,7 +7,7 @@ from statistics import median as median
 from tqdm import tqdm
 import os
 
-os.chdir("c:\\Users\\Tim\\Development\\OCELFeatureExtractionExperiments")
+os.chdir("/home/tim/Development/OCELFeatureExtractionExperiments/")
 from copy import deepcopy
 
 # Data handling
@@ -21,6 +21,13 @@ from ocpa.algo.predictive_monitoring.obj import Feature_Storage as FeatureStorag
 import torch
 from ocpa_PyG_integration.EventGraphDataset import EventGraphDataset
 
+# PyTorch TensorBoard support
+from torch.utils.tensorboard import SummaryWriter
+from datetime import datetime
+
+# Global variables
+from experiment_config import STORAGE_PATH, RANDOM_SEED, TARGET_LABEL
+
 
 # %%
 def count_parameters(model) -> int:
@@ -30,7 +37,7 @@ def count_parameters(model) -> int:
 # %%
 ds_train = EventGraphDataset(
     root="data/ocpa-processed/",
-    filename="BPI2017-feature_storage_split.pkl",
+    filename="BPI2017-feature_storage-split.pkl",
     label_key=("event_remaining_time", ()),
     train=True,
 )
@@ -38,7 +45,7 @@ ds_train = EventGraphDataset(
 # %%
 ds_test = EventGraphDataset(
     root="data/ocpa-processed/",
-    filename="BPI2017-feature_storage_split.pkl",
+    filename="BPI2017-feature_storage-split.pkl",
     label_key=("event_remaining_time", ()),
     test=True,
 )
@@ -63,6 +70,7 @@ print(f"Number of parameters: {count_parameters(model)}")
 
 # Use GPU
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+print(f"Device: {device}")
 model = model.to(device)
 # data = ds_train.to(device)
 
@@ -73,7 +81,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=
 NUM_GRAPHS_PER_BATCH = 512
 # Define loss function (CrossEntropyLoss for Classification Problems with
 # probability distributions)
-criterion = torch.nn.MSELoss()
+loss_fn = torch.nn.MSELoss()
 
 train_loader = DataLoader(ds_train, batch_size=NUM_GRAPHS_PER_BATCH, shuffle=True)
 test_loader = DataLoader(ds_test, batch_size=NUM_GRAPHS_PER_BATCH, shuffle=True)
@@ -86,111 +94,89 @@ def calculate_metrics(y_pred, y_true, epoch, type):
 
 
 # %%
-
-
-def train(epoch):
-    all_preds = []
-    all_labels = []
-
-    model.train()
-    optimizer.zero_grad()
-    # Use all data as input, because all nodes have node features
-    out = model(data.x, data.edge_index)
-    # Only use nodes with labels available for loss calculation --> mask
-    loss = criterion(out[data.train_mask], data.y[data.train_mask])
-    loss.backward()
-    optimizer.step()
-    return loss
-
-
-def train_one_epoch(epoch, model, train_loader, optimizer, loss_fn):
+def train_one_epoch(
+    epoch_index: int, model, train_loader, optimizer, loss_fn, tb_writer
+):
     # Enumerate over the data
-    all_preds = []
-    all_labels = []
     running_loss = 0.0
-    step = 0
-    for _, batch in enumerate(tqdm(train_loader)):
+    last_loss = 0
+    for i, batch in enumerate(tqdm(train_loader)):
         # Use GPU
         batch.to(device)
+        # Every data instance is an input + label pair
+        inputs, adjacency_matrix, labels = (
+            batch.x.float(),
+            batch.edge_index,
+            batch.y.float(),
+        )
         # Reset gradients
         optimizer.zero_grad()
         # Passing the node features and the connection info
-        pred = model(batch.x.float(), batch.edge_index, batch.batch)
-        # Calculating the loss and gradients
-        loss = loss_fn(torch.squeeze(pred), batch.y.float())
+        outputs = model(inputs, adjacency_matrix)
+        # Compute loss and gradients
+        loss = loss_fn(torch.squeeze(outputs), labels)
         loss.backward()
+        # Adjust learnable weights
         optimizer.step()
-        # Update tracking
+        # Gather data and report
         running_loss += loss.item()
-        step += 1
-        print(f"{running_loss} \r", end=" ")
-        print(f"{step} \r", end=" ")
-        all_preds.append(np.rint(torch.sigmoid(pred).cpu().detach().numpy()))
-        all_labels.append(batch.y.cpu().detach().numpy())
-    all_preds = np.concatenate(all_preds).ravel()
-    all_labels = np.concatenate(all_labels).ravel()
+        if i % 1000 == 999:
+            last_loss = running_loss / 1000  # loss per batch
+            print("  batch {} loss: {}".format(i + 1, last_loss))
+            tb_x = epoch_index * len(train_loader) + i + 1
+            tb_writer.add_scalar("Loss/train", last_loss, tb_x)
+            running_loss = 0.0
 
-    calculate_metrics(all_preds, all_labels, epoch, "train")
-    return running_loss / step
-
-
-def test(epoch, model, test_loader, loss_fn):
-    all_preds = []
-    all_preds_raw = []
-    all_labels = []
-    running_loss = 0.0
-    step = 0
-    for batch in test_loader:
-        batch.to(device)
-        pred = model(batch.x.float(), batch.edge_index, batch.batch)
-        loss = loss_fn(torch.squeeze(pred), batch.y.float())
-
-        # Update tracking
-        running_loss += loss.item()
-        step += 1
-        all_preds.append(np.rint(torch.sigmoid(pred).cpu().detach().numpy()))
-        all_preds_raw.append(torch.sigmoid(pred).cpu().detach().numpy())
-        all_labels.append(batch.y.cpu().detach().numpy())
-
-    all_preds = np.concatenate(all_preds).ravel()
-    all_labels = np.concatenate(all_labels).ravel()
-    print(all_preds_raw[0][:10])
-    print(all_preds[:10])
-    print(all_labels[:10])
-    calculate_metrics(all_preds, all_labels, epoch, "test")
-    return running_loss / step
-
-
-def run_training(loss_fn):
-    # Start training
-    best_loss = 1000
-    early_stopping_counter = 0
-    for epoch in range(300):
-        if early_stopping_counter <= 10:  # = x * 5
-            # Training
-            model.train()
-            loss = train_one_epoch(epoch, model, train_loader, optimizer, loss_fn)
-            print(f"Epoch {epoch} | Train Loss {loss}")
-
-            # Testing
-            model.eval()
-            if epoch % 5 == 0:
-                loss = test(epoch, model, test_loader, loss_fn)
-                print(f"Epoch {epoch} | Test Loss {loss}")
-
-                # Update best loss
-                if float(loss) < best_loss:
-                    best_loss = loss
-                    # # Save the currently best model
-                    # mlflow.pytorch.log_model(model, "model", signature=SIGNATURE)
-                    early_stopping_counter = 0
-                else:
-                    early_stopping_counter += 1
-
-        else:
-            print("Early stopping due to no improvement.")
-            return [best_loss]
+    return last_loss
 
 
 # %%
-results = run_training(criterion)
+# Initializing in a separate cell so we can easily add more epochs to the same run
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+writer = SummaryWriter(f"runs/ocel_trainer_{timestamp}")
+
+EPOCHS = 50
+
+best_vloss = 1_000_000.0
+
+for epoch in range(EPOCHS):
+    print("EPOCH {}:".format(epoch + 1))
+
+    # Make sure gradient tracking is on, and do a pass over the data
+    model.train(True)
+    avg_loss = train_one_epoch(epoch, model, train_loader, optimizer, loss_fn, writer)
+
+    # We don't need gradients on to do reporting
+    model.train(False)
+
+    running_vloss = 0.0
+    for i, vdata in enumerate(test_loader):
+        vdata.to(device)
+        vinputs, vadjacency_matrix, vlabels = (
+            vdata.x.float(),
+            vdata.edge_index,
+            vdata.y.float(),
+        )
+        voutputs = model(vinputs, vadjacency_matrix)
+        vloss = loss_fn(voutputs, vlabels)
+        running_vloss += vloss
+
+    avg_vloss = running_vloss / (i + 1)
+    print("LOSS train {} valid {}".format(avg_loss, avg_vloss))
+
+    # Log the running loss averaged per batch
+    # for both training and validation
+    writer.add_scalars(
+        "Training vs. Validation Loss",
+        {"Training": avg_loss, "Validation": avg_vloss},
+        epoch + 1,
+    )
+    writer.flush()
+
+    # Track best performance, and save the model's state
+    if avg_vloss < best_vloss:
+        best_vloss = avg_vloss
+        model_path = "model_{}_{}".format(timestamp, epoch)
+        torch.save(model.state_dict(), model_path)
+
+# %%
