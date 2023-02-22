@@ -5,6 +5,8 @@
 # scipy==1.10.1
 # pandas==1.5.3
 # scikit-learn==1.2.1
+
+# IK WAS HIER
 # tabulate==0.9.0
 # tensorboard==2.12.0
 # torch==1.13.1
@@ -29,5 +31,3 @@
 # MAGIC %pip list
 
 # COMMAND ----------
-
-
