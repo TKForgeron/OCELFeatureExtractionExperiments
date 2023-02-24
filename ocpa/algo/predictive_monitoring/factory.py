@@ -99,7 +99,7 @@ VERSIONS = {
 def apply(
     ocel: OCEL,
     scaler,
-    target_label: str,
+    target_label: str = None,
     event_based_features=[],
     execution_based_features=[],
     event_attributes=[],
@@ -148,6 +148,7 @@ def apply(
         execution_features=execution_based_features,
         ocel=ocel,
         scaler=scaler,
+        target_label=target_label,
     )
     object_f_time = time.time() - s_time
     id = 0
