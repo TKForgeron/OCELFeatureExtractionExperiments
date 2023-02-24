@@ -1,9 +1,13 @@
 # SELF REMINDER. Copy the 'ocpa' directory to the forked one from github, so that I can push updates to github.
+# Timing
+import timeit
+
+start = timeit.default_timer()
+
 
 # Python native
 import pickle
 from statistics import median as median
-from tqdm import tqdm
 
 # Data handling
 # Object centric process mining
@@ -14,7 +18,7 @@ import ocpa.algo.predictive_monitoring.factory as feature_factory
 
 # # Simple machine learning models, procedure tools, and evaluation metrics
 # from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, PowerTransformer
 
 # # Custom GNN tools
 # from gnn_utils import (
@@ -54,7 +58,7 @@ feature_set = [
 ] + [(feature_factory.EVENT_PRECEDING_ACTIVITES, (act,)) for act in activities]
 feature_storage = feature_factory.apply(
     ocel,
-    scaler=StandardScaler,
+    scaler=PowerTransformer,
     target_label=TARGET_LABEL,
     event_based_features=feature_set,
     execution_based_features=[],
@@ -84,3 +88,6 @@ with open(f"{STORAGE_PATH}BPI2017-feature_storage-split.pkl", "wb") as file:
 # x_test, y_test = generate_graph_dataset(
 #     feature_storage.feature_graphs, feature_storage.test_indices, ocel
 # )
+elapsed_time = timeit.default_timer() - start
+minutes, seconds = int(elapsed_time / 60), int(elapsed_time % 60)
+print(f"Time taken: {minutes}m{seconds}s")
