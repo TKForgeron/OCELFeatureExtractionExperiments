@@ -1,5 +1,6 @@
 import time
 
+from ocpa.objects.log.ocel import OCEL
 import ocpa.algo.predictive_monitoring.event_based_features.extraction_functions as event_features
 import ocpa.algo.predictive_monitoring.execution_based_features.extraction_functions as execution_features
 from ocpa.algo.predictive_monitoring.obj import Feature_Storage
@@ -96,7 +97,7 @@ VERSIONS = {
 
 
 def apply(
-    ocel,
+    ocel: OCEL,
     scaler,
     target_label: str,
     event_based_features=[],

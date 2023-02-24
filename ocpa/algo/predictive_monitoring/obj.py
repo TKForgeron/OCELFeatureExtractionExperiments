@@ -1,7 +1,7 @@
 import pandas as pd
 import random
-from copy import copy
-import pickle
+from sklearn.preprocessing import StandardScaler
+from ocpa.objects.log.ocel import OCEL
 
 
 class Feature_Storage:
@@ -61,7 +61,7 @@ class Feature_Storage:
             target = property(_get_target)
             objects = property(_get_objects)
 
-        def __init__(self, case_id, graph, ocel):
+        def __init__(self, case_id, graph, ocel: OCEL):
             self._case_id = case_id
             self._nodes = [
                 Feature_Storage.Feature_Graph.Node(
@@ -127,8 +127,8 @@ class Feature_Storage:
         self,
         event_features: list,
         execution_features: list,
-        ocel,
-        scaler,
+        ocel: OCEL = None,
+        scaler=StandardScaler,
     ):
         self._event_features = event_features
         self._edge_features = []
@@ -225,6 +225,18 @@ class Feature_Storage:
             }
         return mapper
 
+    def _map_graph_values(self, mapper, graphs: Feature_Graph) -> None:
+        """
+        Impure function that sets graph features to scaled values.
+
+        It changes the node attribute values of the graphs passed
+        Therefore, its impure/in_place.
+        """
+        for g in graphs:
+            for node in g.nodes:
+                for att in node.attributes.keys():
+                    node.attributes[att] = mapper[node.event_id][att]
+
     def extract_normalized_train_test_split(
         self,
         test_size: float,
@@ -273,33 +285,31 @@ class Feature_Storage:
             [self.feature_graphs[i] for i in self._test_indices],
         )
 
-        # TEST THIS, AND FURTHER IMPLEMENT VALIDATION SPLITTING!!!
-
         # Normalize (except for target variable)
         train_table = self._event_id_table(train_graphs)
+        val_table = self._event_id_table(val_graphs)
         test_table = self._event_id_table(test_graphs)
         scaler = self.scaler()
         self._set_target_label(target_label)
         self.event_features.remove(
             self.target_label
-        )  # rm y-label s.t. its excluded from scaling
+        )  # remove y-label s.t. its excluded from scaling
         train_table[self.event_features] = scaler.fit_transform(
             X=train_table[self.event_features]
+        )
+        val_table[self.event_features] = scaler.transform(
+            X=val_table[self.event_features]
         )
         test_table[self.event_features] = scaler.transform(
             X=test_table[self.event_features]
         )
         self._set_scaler(scaler)
-        # update features features
-        # for efficiency
+        # Update graphs' feature values
+        #   for efficiency:
         train_mapper = self._create_mapper(train_table)
+        val_mapper = self._create_mapper(val_table)
         test_mapper = self._create_mapper(test_table)
-        # change original values!
-        for g in [self.feature_graphs[i] for i in self.training_indices]:
-            for node in g.nodes:
-                for att in node.attributes.keys():
-                    node.attributes[att] = train_mapper[node.event_id][att]
-        for g in [self.feature_graphs[i] for i in self.test_indices]:
-            for node in g.nodes:
-                for att in node.attributes.keys():
-                    node.attributes[att] = test_mapper[node.event_id][att]
+        #   change original values:
+        self._map_graph_values(train_mapper, train_graphs)
+        self._map_graph_values(val_mapper, val_graphs)
+        self._map_graph_values(test_mapper, test_graphs)
