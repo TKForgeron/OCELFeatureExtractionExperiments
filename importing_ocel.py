@@ -58,13 +58,15 @@ feature_set = [
 ] + [(feature_factory.EVENT_PRECEDING_ACTIVITES, (act,)) for act in activities]
 feature_storage = feature_factory.apply(
     ocel,
-    scaler=PowerTransformer,
-    target_label=TARGET_LABEL,
     event_based_features=feature_set,
     execution_based_features=[],
 )
 feature_storage.extract_normalized_train_test_split(
-    test_size=0.3, target_label=TARGET_LABEL, state=RANDOM_SEED
+    test_size=0.3,
+    validation_size=0.2,
+    scaler=StandardScaler,
+    scaling_exempt_features=[TARGET_LABEL],
+    state=RANDOM_SEED,
 )
 
 with open(f"{STORAGE_PATH}BPI2017-feature_storage-split.pkl", "wb") as file:
