@@ -98,8 +98,6 @@ VERSIONS = {
 
 def apply(
     ocel: OCEL,
-    scaler,
-    target_label: str = None,
     event_based_features=[],
     execution_based_features=[],
     event_attributes=[],
@@ -117,9 +115,6 @@ def apply(
 
     :param ocel: Object-centric event log
     :type ocel: :class:`OCEL <ocpa.objects.log.ocel.OCEL>`
-
-    :param scaler: Scaler from Scikit-learn (uses .fit_transform() and .transform())
-    :type Mixin from Scikit-learn: :class:`Some mixin based on: (OneToOneFeatureMixin, TransformerMixin, BaseEstimator)`
 
     :param event_based_features: list of event-based features. Each feature is a tuple of the function and parameter tuple
     :type event_based_features: Tuple(function, Tuple())
@@ -147,8 +142,6 @@ def apply(
         event_features=event_based_features,
         execution_features=execution_based_features,
         ocel=ocel,
-        scaler=scaler,
-        target_label=target_label,
     )
     object_f_time = time.time() - s_time
     id = 0
@@ -198,7 +191,7 @@ def apply(
         adding_time += time.time() - s_time
         id += 1
     del ocel.log.log["event_objects"]
-    # print("___")
+    # print("_"*16)
     # print("Execution time "+str(execution_time))
     # print("Node Features " + str(nodes_time))
     # print("Adding Features " + str(adding_time))

@@ -128,16 +128,14 @@ class Feature_Storage:
         self,
         event_features: list,
         execution_features: list,
-        target_label: str = None,
         ocel: OCEL = None,
-        scaler=StandardScaler,
     ):
         self._event_features = event_features
         self._edge_features = []
         self._case_features = execution_features
-        self._target_label = target_label
         self._feature_graphs: list[self.Feature_Graph] = []
-        self._scaler = scaler
+        self._scaler = None
+        self._scaling_exempt_features = []
         # self._graph_indices: list[int] = None
         self._train_indices = None
         self._validation_indices = None
@@ -188,12 +186,11 @@ class Feature_Storage:
     def _set_test_indices(self, test_indices):
         self._test_indices = test_indices
 
-    def _get_target_label(self):
-        return self._target_label
+    def _get_scaling_exempt_features(self):
+        return self._scaling_exempt_features
 
-    def _set_target_label(self, target_label):
-        self.__report_target_label_consistency(target_label)
-        self._target_label = target_label
+    def _set_scaling_exempt_features(self, scaling_exempt_features):
+        self._scaling_exempt_features = scaling_exempt_features
 
     event_features = property(_get_event_features, _set_event_features)
     execution_features = property(_get_execution_features, _set_execution_features)
@@ -202,7 +199,9 @@ class Feature_Storage:
     train_indices = property(_get_train_indices, _set_train_indices)
     validation_indices = property(_get_validation_indices, _set_validation_indices)
     test_indices = property(_get_test_indices, _set_test_indices)
-    target_label = property(_get_target_label, _set_target_label)
+    scaling_exempt_features = property(
+        _get_scaling_exempt_features, _set_scaling_exempt_features
+    )
 
     def _event_id_table(self, feature_graphs: list[Feature_Graph]) -> pd.DataFrame:
         features = self.event_features
@@ -228,23 +227,9 @@ class Feature_Storage:
             }
         return mapper
 
-    def __report_target_label_consistency(self, target_label: tuple) -> None:
-        """
-        Method that hides dynamic (but ugly) warning, which is issued when 'target_label' passed to
-        method 'extract_normalized_train_test_split' is unequal to 'self.target_label'.
-
-        This method probably indicates a design flaw that is consciously ignored.
-        """
-        if self.target_label:
-            if self.target_label != target_label:
-                warn(
-                    message=f"Passed parameter '{f'{target_label=}'.partition('=')[0]}' unequal to {self.__class__.__name__}.{f'{self.target_label=}'.partition('=')[0].split('.')[1]}. Expected '{self.target_label}', while '{target_label}' was given. Please pass the same value to {self.__class__} '{self.__init__.__name__}' as '{self.extract_normalized_train_test_split.__qualname__}'.",
-                    category=RuntimeWarning,
-                )
-
     def __map_graph_values(self, mapper, graphs: Feature_Graph) -> None:
         """
-        Impure private method that sets graph features to scaled values.
+        Private method (impure) that sets graph features to scaled values.
 
         It changes the node attribute values of the graphs passed
         Therefore, its impure/in_place.
@@ -258,7 +243,7 @@ class Feature_Storage:
         self, graphs: list[Feature_Graph], initialized_scaler, train: bool
     ) -> None:
         """
-        Impure private method that, given a list of graphs and an initialized scaler object,
+        Private method (impure) that, given a list of graphs and an initialized scaler object,
         normalizes the given graphs in an impure fashion (in_place).
 
         :param train: Mandatory. To prevent data leakage by using information from train set to
@@ -284,7 +269,8 @@ class Feature_Storage:
         self,
         test_size: float,
         validation_size: float = 0,
-        target_label: tuple = None,
+        scaler=StandardScaler,
+        scaling_exempt_features: list[tuple] = [],
         state: int = 42,
     ) -> None:
         """
@@ -298,9 +284,12 @@ class Feature_Storage:
         to the validation set. It takes this from the training set size.
         :type validation_size: float
 
-        :param target_label: The label of the target variable, the one that will be predicted by a model. If passed,
-        the target variable will be excluded from normalization.
-        :type state: str
+        :param scaler: Scaler from Scikit-learn (uses .fit_transform() and .transform())
+        :type Mixin from Scikit-learn: :class:`Some mixin based on: (OneToOneFeatureMixin, TransformerMixin, BaseEstimator)`
+
+        :param scaling_exempt_features: The names of features that will be excluded form normalization. If passed,
+        the these variables will be excluded from normalization. A common use case would be the target variable.
+        :type state: list[tuple]
 
         :param state: Random state of the splitting. Can be used to reproduce splits.
         :type state: int
@@ -335,14 +324,17 @@ class Feature_Storage:
             [self.feature_graphs[i] for i in self._test_indices],
         )
 
-        # Prepare for normalization (ensure y is excluded)
-        scaler = self.scaler()
-        if target_label:
-            self._set_target_label(target_label)
-        if self.target_label:
-            self.event_features.remove(
-                self.target_label
-            )  # remove y-label s.t. it'll be excluded from normalization
+        # Prepare for normalization (ensure scaling_exempt_features are excluded)
+        if scaling_exempt_features:
+            for feature in scaling_exempt_features:
+                # remove scaling_exempt_features s.t. they'll be excluded from normalization
+                try:
+                    self.event_features.remove(feature)
+                except:
+                    warning_msg = f"{feature} in 'scaling_exempt_features' cannot be found in 'self.event_features'."
+                    warn(warning_msg)
+            self._set_scaling_exempt_features(scaling_exempt_features)
+        scaler = scaler()  # initialize scaler object
 
         # Normalize training, validation, and testing set
         self.__normalize_feature_graphs(train_graphs, scaler, train=True)
@@ -351,4 +343,5 @@ class Feature_Storage:
         self.__normalize_feature_graphs(test_graphs, scaler, train=False)
 
         # Store normalization information for reproducibility
-        self._set_scaler(scaler)
+        # self._set_scaler(scaler)
+        self.scaler = scaler
