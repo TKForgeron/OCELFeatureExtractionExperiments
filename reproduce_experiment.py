@@ -15,7 +15,8 @@ import numpy as np
 
 # Object centric process mining
 from ocpa.objects.log.ocel import OCEL
-import ocpa.objects.log.importer.ocel.factory as ocel_import_factory  # json/xml import factory
+# json/xml import factory
+import ocpa.objects.log.importer.ocel.factory as ocel_import_factory
 import ocpa.objects.log.importer.csv.factory as csv_import_factory
 import ocpa.objects.log.converter.factory as convert_factory
 import ocpa.algo.util.filtering.log.time_filtering
