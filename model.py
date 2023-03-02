@@ -39,6 +39,9 @@ class GCN(torch.nn.Module):
         out = self.out(x)
         return out
 
+    def get_class_name(self) -> None:
+        return str(self).split("(")[0]
+
 
 class GAT(torch.nn.Module):
     def __init__(self, num_node_features, num_hidden_features):

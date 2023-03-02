@@ -4,6 +4,7 @@
 *.pt
 
 # Pickled objects and data files
+*.fs
 *.pkl
 *.xlsx
 

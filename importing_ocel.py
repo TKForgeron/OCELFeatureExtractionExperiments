@@ -69,7 +69,7 @@ feature_storage.extract_normalized_train_test_split(
     state=RANDOM_SEED,
 )
 
-with open(f"{STORAGE_PATH}BPI2017-feature_storage-split.pkl", "wb") as file:
+with open(f"{STORAGE_PATH}raw/BPI2017-feature_storage-split.pkl", "wb") as file:
     pickle.dump(feature_storage, file)
 
 # # keep list of first three events for comparability of regression use case

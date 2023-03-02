@@ -271,7 +271,7 @@ class Feature_Storage:
         validation_size: float = 0,
         scaler=StandardScaler,
         scaling_exempt_features: list[tuple] = [],
-        state: int = 42,
+        state: int = None,
     ) -> None:
         """
         Splits and normalizes the feature storage. Each split is normalized according to it's member, i.e., the testing

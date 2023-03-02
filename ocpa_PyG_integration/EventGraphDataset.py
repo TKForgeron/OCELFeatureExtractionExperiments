@@ -16,9 +16,12 @@ print(f"Torch geometric version: {torch_geometric.__version__}")
 
 class EventGraphDataset(Dataset):
     """
-    Class that serves as an adapter/bridge between ocpa and PyG.
+    Class that serves as an adapter between ocpa and PyG.
 
     Specifically, it imports from a Feature_Storage class and works with PyG for implementing a GNN.
+
+    TODO:
+    - Add possibility to load Feature_Storage object from memory, instead of pickled file.
     """
 
     def __init__(
@@ -27,6 +30,7 @@ class EventGraphDataset(Dataset):
         filename,
         label_key: str,
         train: bool = False,
+        validation: bool = False,
         test: bool = False,
         verbosity: int = 1,
         transform=None,
@@ -36,31 +40,42 @@ class EventGraphDataset(Dataset):
         root (string, optional): Where the dataset should be stored. This folder is split
             into raw_dir (downloaded dataset) and processed_dir (processed data).
 
-        train (bool, optional): If this is set the train indices Feature_Storage will be used.
+        train (bool, optional): If True, train indices of Feature_Storage will be used.
             Use this when constructing the train split of the data set.
-            If both train and test are not set, the whole Feature_Storage will
+            If train, validation, and test are all False, the whole Feature_Storage will
             be used as a data set (not recommended).
 
-        test (bool, optional): If this is set the test indices of Feature_Storage will be used.
+        validation (bool, optional): If True, validation indices of Feature_Storage will be used.
+            Use this when constructing the validation split of the data set.
+            If train, validation, and test are all False, the whole Feature_Storage will
+            be used as a data set (not recommended).
+
+        test (bool, optional): If True, test indices of Feature_Storage will be used.
             Use this when constructing the test split of the data set.
-            If both train and test are not set, the whole Feature_Storage will
+            If train, validation, and test are all False, the whole Feature_Storage will
             be used as a data set (not recommended).
         """
         self.label_key = label_key
         self.train = train
+        self.validation = validation
         self.test = test
         self.filename = filename
         self._verbosity = verbosity
+        # Set filename according to type of dataset
+        self._base_filename = "data"
+        if self.train:
+            self._base_filename += "_train"
+        elif self.validation:
+            self._base_filename += "_val"
+        elif self.test:
+            self._base_filename += "_test"
         super(EventGraphDataset, self).__init__(root, transform, pre_transform)
-
-        # print(f"TRACE: EventGraphDataset.__init__(root={root}, filename={filename})")
 
     @property
     def raw_file_names(self):
         """If this file exists in raw_dir, the download is not triggered.
         (The download func. is not implemented here)
         """
-        # print("TRACE: EventGraphDataset.raw_file_names")
         return self.filename
 
     @property
@@ -71,14 +86,18 @@ class EventGraphDataset(Dataset):
             self.data = pickle.load(file)
 
         if self.train:
-            return [f"data_train_{i}.pt" for i in self.data.training_indices]
+            return [f"{self._base_filename}_{i}.pt" for i in self.data.train_indices]
+        if self.validation:
+            return [
+                f"{self._base_filename}_{i}.pt" for i in self.data.validation_indices
+            ]
         if self.test:
-            return [f"data_test_{i}.pt" for i in self.data.test_indices]
+            return [f"{self._base_filename}_{i}.pt" for i in self.data.test_indices]
         else:
-            return [f"data_{i}.pt" for i in range(len(self.data.feature_graphs))]
-
-    # def download(self):
-    #     pass
+            return [
+                f"{self._base_filename}_{i}.pt"
+                for i in range(len(self.data.feature_graphs))
+            ]
 
     def process(self):
         """Processes a Feature_Storage object into PyG instance graph objects"""
@@ -86,55 +105,44 @@ class EventGraphDataset(Dataset):
         with open(self.raw_paths[0], "rb") as file:
             self.data = pickle.load(file)
 
-        # if train-test split is defined:
-        #   process graph instances with a train or test tag.
-        # else:
-        #   do not give a tag to files that are being saved to disk
-
         if self.train:
-            # Retrieve graphs with train indices
-            train_graphs = [
-                self.data.feature_graphs[i] for i in self.data.training_indices
-            ]
-            # Set Dataset size
-            self._set_size(len(train_graphs))
-            # Save each graph instance
-            for index, feature_graph in self.__custom_verbosity_enumerate(
-                train_graphs, self._verbosity
-            ):
-                self._write_graph_to_disk(
-                    graph=feature_graph,
-                    filename=f"data_train_{index}.pt",
-                )
+            # Retrieve graphs with train indices and write to disk
+            self._graphs_to_disk(
+                [self.data.feature_graphs[i] for i in self.data.train_indices]
+            )
+        elif self.validation:
+            # Retrieve graphs with validation indices and write to disk
+            self._graphs_to_disk(
+                [self.data.feature_graphs[i] for i in self.data.validation_indices]
+            )
         elif self.test:
-            # Retrieve graphs with test indices
-            test_graphs = [self.data.feature_graphs[i] for i in self.data.test_indices]
-            # Set Dataset size
-            self._set_size(len(test_graphs))
-            # Save each graph instance
-            for index, feature_graph in self.__custom_verbosity_enumerate(
-                test_graphs, self._verbosity
-            ):
-                self._write_graph_to_disk(
-                    graph=feature_graph,
-                    filename=f"data_test_{index}.pt",
-                )
+            # Retrieve graphs with test indices and write to disk
+            self._graphs_to_disk(
+                [self.data.feature_graphs[i] for i in self.data.test_indices]
+            )
         else:
-            # Save each graph instance
-            for index, feature_graph in self.__custom_verbosity_enumerate(
-                self.data.feature_graphs, self._verbosity
-            ):
-                self._write_graph_to_disk(
-                    graph=feature_graph,
-                    filename=f"data_{index}.pt",
-                )
+            # Write all graphs to disk
+            self._graphs_to_disk(self.data.feature_graphs)
 
-    def _write_graph_to_disk(
+    def _graphs_to_disk(
+        self,
+        graphs: list[FeatureStorage.Feature_Graph],
+    ):
+        # Set dataset size
+        self._set_size(len(graphs))
+        # Save each graph instance
+        for index, feature_graph in self.__custom_verbosity_enumerate(
+            graphs, self._verbosity
+        ):
+            self._one_graph_to_disk(
+                graph=feature_graph,
+                filename=f"{self._base_filename}_{index}.pt",
+            )
+
+    def _one_graph_to_disk(
         self,
         graph: FeatureStorage.Feature_Graph,
         filename: str,
-        # label_key: Any,
-        # test: bool,
     ):
         # Split off labels from nodes,
         # and return full graph (cleansed of labels), and list of labels
@@ -231,22 +239,20 @@ class EventGraphDataset(Dataset):
             return enumerate(iterable)
 
     def len(self) -> int:
-        if self.train or self.test:
+        if self.train or self.test or self.validation:
+            if len(self.data.feature_graphs) == self._size:
+                raise Exception(
+                    "Total number of graphs in Feature_Storage is equal to EventGraphDataset._size, but the latter should be equal to either the train-, validation-, or test-set size"
+                )
             return self._size
-        elif len(self.data.feature_graphs) == self._size:
-            raise Exception(
-                "Total number of graphs in Feature_Storage is equal to EventGraphDataset._size, which should be equal to either the train or test-set size"
-            )
         else:
             return len(self.data.feature_graphs)
 
     def get(self, idx):
-        """- Equivalent to __getitem__ in pytorch
+        """
+        - Equivalent to __getitem__ in PyTorch
         - Is not needed for PyG's InMemoryDataset
         """
-        if self.train:
-            return torch.load(os.path.join(self.processed_dir, f"data_train_{idx}.pt"))
-        if self.test:
-            return torch.load(os.path.join(self.processed_dir, f"data_test_{idx}.pt"))
-        else:
-            return torch.load(os.path.join(self.processed_dir, f"data_{idx}.pt"))
+        return torch.load(
+            os.path.join(self.processed_dir, f"{self._base_filename}_{idx}.pt")
+        )
