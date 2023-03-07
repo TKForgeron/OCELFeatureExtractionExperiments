@@ -7,7 +7,7 @@ start = timeit.default_timer()
 
 # Python native
 import pickle
-from statistics import median as median
+from statistics import median, mean
 
 # Data handling
 # Object centric process mining
@@ -50,12 +50,44 @@ ocel = csv_import_factory.apply(
     filename, csv_import_factory.TO_OCEL, parameters, file_path_object_attribute_table
 )
 
-activities = list(set(ocel.log.log["event_activity"].tolist()))
-feature_set = [
-    TARGET_LABEL,
-    (feature_factory.EVENT_PREVIOUS_TYPE_COUNT, ("GDSRCPT",)),
-    (feature_factory.EVENT_ELAPSED_TIME, ()),
-] + [(feature_factory.EVENT_PRECEDING_ACTIVITES, (act,)) for act in activities]
+activities = ocel.log.log["event_activity"].unique().tolist()
+feature_set = (
+    [
+        # (feature_factory.EVENT_DURATION),
+        (feature_factory.EVENT_IDENTITY, ()),
+        # (feature_factory.EVENT_TYPE_COUNT, ()),
+        #
+    ]
+    + [(feature_factory.EVENT_CURRENT_ACTIVITIES, (act,)) for act in activities]  # C1
+    + [(feature_factory.EVENT_PRECEDING_ACTIVITIES, (act,)) for act in activities]  # C2
+    + [
+        (feature_factory.EVENT_PREVIOUS_ACTIVITY_COUNT, (act,)) for act in activities
+    ]  # C3
+    + [(feature_factory.EVENT_ACTIVITY, (act,)) for act in activities]  # C5
+    + [
+        (feature_factory.EVENT_AGG_PREVIOUS_CHAR_VALUES, ()),  # D1
+        (feature_factory.EVENT_PRECEDING_CHAR_VALUES, ()),  # D2
+        (feature_factory.EVENT_CHAR_VALUE, ()),  # D3
+        # (feature_factory.EVENT_CURRENT_RESOURCE_WORKLOAD, ()), #R1
+        # (feature_factory.EVENT_CURRENT_TOTAL_WORKLOAD, ()), #R2
+        # (feature_factory.EVENT_RESOURCE, ()), #R3
+        (feature_factory.EVENT_EXECUTION_DURATION, ()),  # P1
+        (feature_factory.EVENT_ELAPSED_TIME, ()),  # P2
+        TARGET_LABEL,  # P3
+        (feature_factory.EVENT_FLOW_TIME, ()),  # P4
+        (feature_factory.EVENT_SYNCHRONIZATION_TIME, ()),  # P5
+        (feature_factory.EVENT_SOJOURN_TIME, ()),  # P6
+        # (feature_factory.EVENT_POOLING_TIME, ()), #P7
+        # (feature_factory.EVENT_LAGGING_TIME, ()), #P8
+        (feature_factory.EVENT_SERVICE_TIME, ()),  # P9
+        # (feature_factory.EVENT_WAITING_TIME, ()), #P10
+        # (feature_factory.EVENT_CURRENT_TOTAL_OBJECT_COUNT, ()), #O1
+        (feature_factory.EVENT_PREVIOUS_OBJECT_COUNT, ()),  # O2
+        (feature_factory.EVENT_PREVIOUS_TYPE_COUNT, ("GDSRCPT",)),  # O3
+        # (feature_factory.EVENT_OBJECTS, ()), #O4
+        (feature_factory.EVENT_NUM_OF_OBJECTS, ()),  # O5
+    ]
+)
 feature_storage = feature_factory.apply(
     ocel,
     event_based_features=feature_set,
@@ -69,7 +101,7 @@ feature_storage.extract_normalized_train_test_split(
     state=RANDOM_SEED,
 )
 
-with open(f"{STORAGE_PATH}raw/BPI2017-feature_storage-split.pkl", "wb") as file:
+with open(f"{STORAGE_PATH}raw/BPI2017-feature_storage-split-6mrt.pkl", "wb") as file:
     pickle.dump(feature_storage, file)
 
 # # keep list of first three events for comparability of regression use case
