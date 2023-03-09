@@ -3,6 +3,9 @@
 import pickle
 from statistics import median, mean
 import statistics
+import timeit
+from dataclasses import dataclass
+from functools import partial
 
 # Data handling
 # Object centric process mining
@@ -10,6 +13,7 @@ import statistics
 # import ocpa.algo.evaluation.precision_and_fitness.evaluator as precision_fitness_evaluator # COMMENTED OUT BY TIM
 import ocpa.objects.log.importer.csv.factory as csv_import_factory
 import ocpa.algo.predictive_monitoring.factory as feature_factory
+from ocpa.objects.log.ocel import OCEL, OCELslots
 
 # # Simple machine learning models, procedure tools, and evaluation metrics
 # from sklearn.model_selection import train_test_split
@@ -28,7 +32,7 @@ from sklearn.preprocessing import StandardScaler, PowerTransformer
 # )
 
 # Global variables
-from experiment_config import STORAGE_PATH, RANDOM_SEED, TARGET_LABEL
+from replicating.experiment_config import STORAGE_PATH, RANDOM_SEED, TARGET_LABEL
 
 filename = "example_logs/mdl/BPI2017-Final.csv"
 object_types = ["application", "offer"]
@@ -41,8 +45,36 @@ parameters = {
 }
 file_path_object_attribute_table = None
 
-with open(f"{STORAGE_PATH}/raw/BPI2017-ocel.pkl", "rb") as file:
-    ocel = pickle.load(file)
+# Importing OCEL
+ocel = csv_import_factory.apply(
+    filename, csv_import_factory.TO_OCEL, parameters, file_path_object_attribute_table
+)
+
+original_csv_columns = (
+    "event_None",
+    "event_Unnamed: 0",
+    "event_id",
+    "application",
+    "event_activity",
+    "event_start_timestamp",
+    "event_timestamp",
+    "event_LoanGoal",
+    "event_ApplicationType",
+    "event_RequestedAmount",
+    "event_Action",
+    "event_FirstWithdrawalAmount",
+    "event_Accepted",
+    "event_NumberOfTerms",
+    "offer",
+    "event_org:resource",
+    "event_MonthlyCost",
+    "event_EventOrigin",
+    "event_EventID",
+    "event_Selected",
+    "event_CreditScore",
+    "event_OfferedAmount",
+    "event_CaseID",
+)
 
 event_attributes = [
     "event_RequestedAmount",
@@ -54,6 +86,8 @@ event_attributes = [
     "event_OfferedAmount",
 ]  # Manually selected for BPI17
 activities = ocel.log.log["event_activity"].unique().tolist()
+
+
 feature_set = (
     [
         # (feature_factory.EVENT_DURATION),
@@ -68,12 +102,9 @@ feature_set = (
     ]  # C3
     + [(feature_factory.EVENT_ACTIVITY, (act,)) for act in activities]  # C5
     + [
-        (feature_factory.EVENT_AGG_PREVIOUS_CHAR_VALUES, (attr, statistics.mean))
-        for attr in event_attributes
-    ]  # D1
-    + [
-        (feature_factory.EVENT_PRECEDING_CHAR_VALUES, ()),  # D2
-        (feature_factory.EVENT_CHAR_VALUE, ()),  # D3
+        # (feature_factory.EVENT_AGG_PREVIOUS_CHAR_VALUES, ()),  # D1
+        # (feature_factory.EVENT_PRECEDING_CHAR_VALUES, ()),  # D2
+        # (feature_factory.EVENT_CHAR_VALUE, ()),  # D3
         # (feature_factory.EVENT_CURRENT_RESOURCE_WORKLOAD, ()), #R1
         # (feature_factory.EVENT_CURRENT_TOTAL_WORKLOAD, ()), #R2
         # (feature_factory.EVENT_RESOURCE, ()), #R3
@@ -85,7 +116,7 @@ feature_set = (
         (feature_factory.EVENT_SOJOURN_TIME, ()),  # P6
         # (feature_factory.EVENT_POOLING_TIME, ()), #P7
         # (feature_factory.EVENT_LAGGING_TIME, ()), #P8
-        (feature_factory.EVENT_SERVICE_TIME, ()),  # P9
+        # (feature_factory.EVENT_SERVICE_TIME, ()),  # P9
         # (feature_factory.EVENT_WAITING_TIME, ()), #P10
         # (feature_factory.EVENT_CURRENT_TOTAL_OBJECT_COUNT, ()), #O1
         (feature_factory.EVENT_PREVIOUS_OBJECT_COUNT, ()),  # O2
@@ -94,12 +125,12 @@ feature_set = (
         (feature_factory.EVENT_NUM_OF_OBJECTS, ()),  # O5
     ]
 )
-
 feature_storage = feature_factory.apply(
     ocel,
     event_based_features=feature_set,
     execution_based_features=[],
 )
+
 feature_storage.extract_normalized_train_test_split(
     test_size=0.3,
     validation_size=0.2,
@@ -107,6 +138,7 @@ feature_storage.extract_normalized_train_test_split(
     scaling_exempt_features=[TARGET_LABEL],
     state=RANDOM_SEED,
 )
+
 
 # DUMPING
 with open(f"{STORAGE_PATH}BPI2017-feature_storage-split.pkl", "wb") as file:
@@ -119,17 +151,3 @@ with open(
     f"{STORAGE_PATH}BPI2017-feature_storage-split(nolabel_when_scaling).pkl", "rb"
 ) as file:
     fs_nolabel_when_scaling = pickle.load(file)
-
-
-def check_prop(fgs0: list, fgs1: list) -> bool:
-    """Function that checks whether all node values of two lists of feature graphs are equal."""
-    props = [True]
-    for fg0, fg1 in zip(fgs0, fgs1):
-        for n0, n1 in zip(fg0.nodes, fg1.nodes):
-            prop = n0.attributes[TARGET_LABEL] == n1.attributes[TARGET_LABEL]
-            props = [props[0] and prop]
-
-    return props[0]
-
-
-check_prop(fs_nolabel_when_scaling.feature_graphs, feature_storage.feature_graphs)

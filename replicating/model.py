@@ -13,12 +13,14 @@ from torch_geometric.nn import GCNConv, GATConv
 
 
 class GCN(torch.nn.Module):
-    def __init__(self, num_node_features, num_hidden_features):
+    def __init__(self, num_node_features: int, hyperparams: dict):
         super().__init__()
 
-        self.gconv1 = GCNConv(num_node_features, num_hidden_features)
-        self.gconv2 = GCNConv(num_hidden_features, num_hidden_features)
-        self.out = Linear(num_hidden_features, 1)
+        self.gconv1 = GCNConv(num_node_features, hyperparams["num_hidden_features"])
+        self.gconv2 = GCNConv(
+            hyperparams["num_hidden_features"], hyperparams["num_hidden_features"]
+        )
+        self.out = Linear(hyperparams["num_hidden_features"], 1)
 
     def forward(self, x, edge_index):
         # x, edge_index = data.x, data.edge_index
@@ -39,17 +41,19 @@ class GCN(torch.nn.Module):
         out = self.out(x)
         return out
 
-    def get_class_name(self) -> None:
+    def get_class_name(self) -> str:
         return str(self).split("(")[0]
 
 
 class GAT(torch.nn.Module):
-    def __init__(self, num_node_features, num_hidden_features):
+    def __init__(self, num_node_features: int, hyperparams: dict):
         super().__init__()
 
-        self.gconv1 = GATConv(num_node_features, num_hidden_features)
-        self.gconv2 = GATConv(num_hidden_features, num_hidden_features)
-        self.out = Linear(num_hidden_features, 1)
+        self.gconv1 = GATConv(num_node_features, hyperparams["num_hidden_features"])
+        self.gconv2 = GATConv(
+            hyperparams["num_hidden_features"], hyperparams["num_hidden_features"]
+        )
+        self.out = Linear(hyperparams["num_hidden_features"], 1)
 
     def forward(self, x, edge_index):
         # x, edge_index = data.x, data.edge_index
@@ -70,5 +74,5 @@ class GAT(torch.nn.Module):
         out = self.out(x)
         return out
 
-    def get_class_name(self) -> None:
+    def get_class_name(self) -> str:
         return str(self).split("(")[0]

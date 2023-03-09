@@ -10,6 +10,7 @@ from ast import literal_eval
 # Data handling
 import pandas as pd
 import numpy as np
+import networkx as nx
 
 # Object centric process mining
 from ocpa.objects.log.ocel import OCEL
@@ -585,7 +586,6 @@ if True:
 
     # define prediction function
     def f(edge_selection):
-
         all_preds = []
 
         for i in edge_selection:

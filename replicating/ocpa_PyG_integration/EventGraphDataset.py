@@ -1,17 +1,30 @@
 # import pandas as pd
+from dataclasses import dataclass
+import numpy as np
 from tqdm import tqdm
 import os
-from typing import Any
 from ocpa.algo.predictive_monitoring.obj import Feature_Storage as FeatureStorage
 import pickle
 import torch
 import torch_geometric
 from torch_geometric.data import Dataset, Data
-import numpy as np
 
 print(f"Torch version: {torch.__version__}")
 print(f"Cuda available: {torch.cuda.is_available()}")
 print(f"Torch geometric version: {torch_geometric.__version__}")
+
+
+@dataclass
+class SubGraphParameters:
+    __slots__ = "size", "graph_subgraph_index_map"
+    size: int
+    graph_subgraph_index_map: dict[int, list[int]] = {}
+
+    def add_subgraph(self, graph_idx: int, subgraph_idx: int) -> None:
+        if graph_idx in self.graph_subgraph_index_map:
+            self.graph_subgraph_index_map[graph_idx].append(subgraph_idx)
+        else:
+            self.graph_subgraph_index_map[graph_idx] = [subgraph_idx]
 
 
 class EventGraphDataset(Dataset):
@@ -21,6 +34,9 @@ class EventGraphDataset(Dataset):
     Specifically, it imports from a Feature_Storage class and works with PyG for implementing a GNN.
 
     TODO:
+    - add if statements handling subgraph samplingn naming convention in: processed_file_names() and get()
+    - currently, we record y per node, maybe we should try saving one y per graph (only y for the last node in a graph)
+    - add event indices as node indices, like in gnn_utils.py (generate_graph_dataset())
     - Add possibility to load Feature_Storage object from memory, instead of pickled file.
     """
 
@@ -29,12 +45,14 @@ class EventGraphDataset(Dataset):
         root,
         filename,
         label_key: str,
+        size_subgraph_samples: int = None,
         train: bool = False,
         validation: bool = False,
         test: bool = False,
         verbosity: int = 1,
         transform=None,
         pre_transform=None,
+        file_extension: str = "pt",
     ):
         """
         root (string, optional): Where the dataset should be stored. This folder is split
@@ -54,14 +72,19 @@ class EventGraphDataset(Dataset):
             Use this when constructing the test split of the data set.
             If train, validation, and test are all False, the whole Feature_Storage will
             be used as a data set (not recommended).
+
+        NOTE: For disambiguation purposes, througout this class, a distinction
+            has been made between 'graph' and 'feature graph'.
+            The first being of class `torch_geometric.data.Data` and the latter being
+            of class `ocpa.algo.predictive_monitoring.obj.Feature_Graph.Feature_Storage`
         """
+        self.filename = filename
         self.label_key = label_key
+        self.subgraph_params = SubGraphParameters(size_subgraph_samples)
         self.train = train
         self.validation = validation
         self.test = test
-        self.filename = filename
         self._verbosity = verbosity
-        # Set filename according to type of dataset
         self._base_filename = "data"
         if self.train:
             self._base_filename += "_train"
@@ -69,6 +92,7 @@ class EventGraphDataset(Dataset):
             self._base_filename += "_val"
         elif self.test:
             self._base_filename += "_test"
+        self._file_extension = file_extension
         super(EventGraphDataset, self).__init__(root, transform, pre_transform)
 
     @property
@@ -86,27 +110,47 @@ class EventGraphDataset(Dataset):
             self.data = pickle.load(file)
 
         if self.train:
-            return [f"{self._base_filename}_{i}.pt" for i in self.data.train_indices]
-        if self.validation:
             return [
-                f"{self._base_filename}_{i}.pt" for i in self.data.validation_indices
+                f"{self._base_filename}_{graph_idx}.{self._file_extension}"
+                for graph_idx in range(len(self.data.train_indices))
+            ]
+        if self.validation:
+            if self.subgraph_params.size:
+                pass
+            return [
+                f"{self._base_filename}_{graph_idx}.{self._file_extension}"
+                for graph_idx in range(len(self.data.validation_indices))
             ]
         if self.test:
-            return [f"{self._base_filename}_{i}.pt" for i in self.data.test_indices]
+            return [
+                f"{self._base_filename}_{graph_idx}.{self._file_extension}"
+                for graph_idx in range(len(self.data.test_indices))
+            ]
         else:
             return [
-                f"{self._base_filename}_{i}.pt"
-                for i in range(len(self.data.feature_graphs))
+                f"{self._base_filename}_{graph_idx}.{self._file_extension}"
+                for graph_idx in range(len(self.data.feature_graphs))
             ]
+
+    def _set_size(self, size: int) -> None:
+        """Sets the number of graphs stored in this EventGraphDataset object."""
+        self._size = size
+
+    def _get_size(self) -> int:
+        """Gets the number of graphs stored in this EventGraphDataset object."""
+        return self._size
+
+    size: int = property(_get_size, _set_size)
 
     def process(self):
         """Processes a Feature_Storage object into PyG instance graph objects"""
 
+        # Retrieve Feature_Storage object from disk
         with open(self.raw_paths[0], "rb") as file:
             self.data = pickle.load(file)
 
         if self.train:
-            # Retrieve graphs with train indices and write to disk
+            # Retrieve feature graphs with train indices and write to disk
             self._graphs_to_disk(
                 [self.data.feature_graphs[i] for i in self.data.train_indices]
             )
@@ -124,40 +168,49 @@ class EventGraphDataset(Dataset):
             # Write all graphs to disk
             self._graphs_to_disk(self.data.feature_graphs)
 
-    def _graphs_to_disk(
+    def _feature_graphs_to_disk(
         self,
-        graphs: list[FeatureStorage.Feature_Graph],
+        feature_graphs: list[FeatureStorage.Feature_Graph],
     ):
-        # Set dataset size
-        self._set_size(len(graphs))
-        # Save each graph instance
+        total_num_feature_graphs = []
+        # Save each feature_graph instance
         for index, feature_graph in self.__custom_verbosity_enumerate(
-            graphs, self._verbosity
+            feature_graphs, miniters=self._verbosity
         ):
-            self._one_graph_to_disk(
-                graph=feature_graph,
-                filename=f"{self._base_filename}_{index}.pt",
-            )
+            # Save a feature_graph instance
+            total_num_feature_graphs += [
+                self._graph_as_data_to_disk(
+                    graph=feature_graph,
+                    graph_idx=index,
+                )
+            ]
+        self.size = sum(total_num_feature_graphs)
 
-    def _one_graph_to_disk(
-        self,
-        graph: FeatureStorage.Feature_Graph,
-        filename: str,
-    ):
+    def _feature_graph_to_graph_to_disk(
+        self, feature_graph: FeatureStorage.Feature_Graph, graph_idx: int
+    ) -> int:
+        """
+        Saves a FeatureStorage.Feature_Graph object as PyG Data object(s) to disk.
+
+        Returns amount of PyG Data object instances that are saved, which depends
+         on whether subgraphs will be sampled, and if yes, how large they will be
+         (explicated in: EventGraphDataset.subgraph_params.size)
+        """
         # Split off labels from nodes,
         # and return full graph (cleansed of labels), and list of labels
-        labels = self._split_X_y(graph, self.label_key)
+        labels = self._split_X_y(feature_graph, self.label_key)
+        #  np.argsort([node.event_id for node in graph.nodes])[-1]
 
         # Get node features
-        node_feats = self._get_node_features(graph)
+        node_feats = self._get_node_features(feature_graph)
 
         # Get edge features
         # edge_feats = self._get_edge_features(feature_graph)
 
         # Get adjacency matrix
-        edge_index = self._get_adjacency_matrix(graph)
+        edge_index = self._get_adjacency_matrix(feature_graph)
 
-        # Create data object
+        # Create graph data object
         data = Data(
             y=labels,
             x=node_feats,
@@ -165,12 +218,53 @@ class EventGraphDataset(Dataset):
             # edge_attr=edge_feats,
         )
 
-        torch.save(data, os.path.join(self.processed_dir, filename))
+        if self.subgraph_params.size:
+            # Retrieve indices that would sort the nodes in the graph
+            sorted_node_indices = np.argsort(
+                [
+                    self.__get_node_index_mapping(feature_graph)[node.event_id]
+                    for node in feature_graph.nodes
+                ]
+            )
+            # extract subgraph and label for each node set as terminal node
+            k = self.subgraph_params.size
+            num_graphs = 0
+            if len(sorted_node_indices) != 0:
+                for i in range(k - 1, len(sorted_node_indices)):
+                    subgraph_idx = i - (k - 1)
+                    subgraph = data.subgraph(
+                        subset=torch.tensor(
+                            range(subgraph_idx, i + 1), dtype=torch.long
+                        )
+                    )  # include last event
+                    # subgraph_label = subgraph.ndata["remaining_time"].numpy()[-1]
+                    torch.save(
+                        subgraph,
+                        os.path.join(
+                            self.processed_dir,
+                            f"{self._base_filename}_{graph_idx}_{subgraph_idx}.{self._file_extension}",
+                        ),
+                    )
+                    num_graphs += 1
+                    self.subgraph_params.add_subgraph(graph_idx, subgraph_idx)
+
+            # Return count of graph data objects that were saved
+            # return max(graph.size - self.subgraph_params.size, 1)
+            return num_graphs
+        else:
+            torch.save(
+                data,
+                os.path.join(
+                    self.processed_dir,
+                    f"{self._base_filename}_{graph_idx}.{self._file_extension}",
+                ),
+            )
+            return 1
 
     def _split_X_y(
         self,
         feature_graph: FeatureStorage.Feature_Graph,
-        label_key: Any,
+        label_key: tuple[str, tuple],
     ) -> list[torch.float]:
         """
         Impure function that splits off the target label from a feature graph
@@ -210,14 +304,11 @@ class EventGraphDataset(Dataset):
         self, feature_graph: FeatureStorage.Feature_Graph
     ) -> torch.Tensor:
         """
-        Function that returns the directed adjacency matrix in COO format, given a graph
+        Returns the directed adjacency matrix in COO format, given a graph
         [2, Number of edges]
         """
         # Map event_id to node_index (counting from 0) using a dictionary
-        node_index_map = {
-            id: i
-            for i, id in enumerate([node.event_id for node in feature_graph.nodes])
-        }
+        node_index_map = self.__get_node_index_mapping(feature_graph)
         # Actually map event_id to node_index
         # so we have an index-based (event_id-agnostic) directed COO adjacency_matrix.
         adjacency_matrix_COO = [
@@ -227,12 +318,17 @@ class EventGraphDataset(Dataset):
 
         return torch.tensor(adjacency_matrix_COO, dtype=torch.long)
 
-    def _set_size(self, size: int) -> None:
-        """Set the number of graphs stored in this EventGraphDataset object."""
-        self._size = size
+    def __get_node_index_mapping(
+        self, feature_graph: FeatureStorage.Feature_Graph
+    ) -> dict:
+        """Returns a dictionary containing a mapping from event_ids to node indices in the given graph"""
+        return {
+            id: i
+            for i, id in enumerate([node.event_id for node in feature_graph.nodes])
+        }
 
     def __custom_verbosity_enumerate(self, iterable, miniters: int):
-        """Return either just the enumerated iterable, or one with the progress tracked."""
+        """Returns either just the enumerated iterable, or one with the progress tracked."""
         if self._verbosity:
             return tqdm(enumerate(iterable), miniters=miniters)
         else:
@@ -248,11 +344,14 @@ class EventGraphDataset(Dataset):
         else:
             return len(self.data.feature_graphs)
 
-    def get(self, idx):
+    def get(self, graph_idx):
         """
         - Equivalent to __getitem__ in PyTorch
         - Is not needed for PyG's InMemoryDataset
         """
         return torch.load(
-            os.path.join(self.processed_dir, f"{self._base_filename}_{idx}.pt")
+            os.path.join(
+                self.processed_dir,
+                f"{self._base_filename}_{graph_idx}.{self._file_extension}",
+            )
         )
