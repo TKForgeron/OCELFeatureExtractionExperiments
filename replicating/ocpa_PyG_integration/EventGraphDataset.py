@@ -217,29 +217,33 @@ class EventGraphDataset(Dataset):
         self,
         feature_graphs: list[FeatureStorage.Feature_Graph],
     ):
+        # Set size of the dataset (this depends on whether subgraphs were sampled)
+        if self.subgraph_params.actual_subgraph_sampling:
+            num_nodes_per_feature_graph = [fg.size for fg in feature_graphs]
+            num_subgraphs_per_graph = [
+                max(num_nodes - self.subgraph_params.size, 0)
+                for num_nodes in num_nodes_per_feature_graph
+            ]
+            self.size = sum(num_subgraphs_per_graph)
+
+        else:
+            self.size = len(feature_graphs)
         # Save each feature_graph instance
         for index, feature_graph in self.__custom_verbosity_enumerate(
             feature_graphs, miniters=self._verbosity
         ):
             # Save a feature_graph instance
-
             self._feature_graph_to_graph_to_disk(
                 feature_graph=feature_graph,
                 graph_idx=index,
+                num_subgraphs_per_graph=num_subgraphs_per_graph,
             )
-        # Set size of the dataset (this depends on whether subgraphs were sampled)
-        if self.subgraph_params.actual_subgraph_sampling:
-            self.size = sum(
-                [
-                    len(subgraph_idxs)
-                    for subgraph_idxs in self.subgraph_params.graph_subgraph_index_map.values()
-                ]
-            )
-        else:
-            self.size = len(self.subgraph_params.graph_indices)
 
     def _feature_graph_to_graph_to_disk(
-        self, feature_graph: FeatureStorage.Feature_Graph, graph_idx: int
+        self,
+        feature_graph: FeatureStorage.Feature_Graph,
+        graph_idx: int,
+        num_subgraphs_per_graph: list[int] = None,
     ) -> None:
         """
         Saves a FeatureStorage.Feature_Graph object as PyG Data object(s) to disk.
@@ -251,17 +255,12 @@ class EventGraphDataset(Dataset):
         # Split off labels from nodes,
         # and return full graph (cleansed of labels), and list of labels
         labels = self._split_X_y(feature_graph, self.label_key)
-        #  np.argsort([node.event_id for node in graph.nodes])[-1]
-
         # Get node features
         node_feats = self._get_node_features(feature_graph)
-
         # Get edge features
         # edge_feats = self._get_edge_features(feature_graph)
-
         # Get adjacency matrix
         edge_index = self._get_adjacency_matrix(feature_graph)
-
         # Create graph data object
         data = Data(
             y=labels,
@@ -271,6 +270,7 @@ class EventGraphDataset(Dataset):
         )
 
         if self.subgraph_params.size:
+            # idxs_to_save = range(num_subgraphs_per_graph[graph_idx])
             # Retrieve indices that would sort the nodes in the graph
             sorted_node_indices = np.argsort(
                 [
@@ -279,6 +279,9 @@ class EventGraphDataset(Dataset):
                 ]
             )
             # extract subgraph and label for each node set as terminal node
+            current_idx = sum(
+                num_subgraphs_per_graph[:graph_idx]
+            )  #######latest addition
             k = self.subgraph_params.size
             if len(sorted_node_indices) != 0:
                 for i in range(k - 1, len(sorted_node_indices)):
@@ -293,18 +296,22 @@ class EventGraphDataset(Dataset):
                         subgraph,
                         os.path.join(
                             self.processed_dir,
-                            f"{self._base_filename}_{graph_idx}_{subgraph_idx}.{self._file_extension}",
+                            self.__get_graph_filename(
+                                current_idx + subgraph_idx
+                            ),  #######latest addition - give correct/findable/doortellend (sub)graph_idx
                         ),
                     )
                     # record naming scheme/graph indices, for loading/skipping processing later
-                    self.subgraph_params.add_subgraph(graph_idx, subgraph_idx)
+                    self.subgraph_params.add_subgraph(
+                        graph_idx, subgraph_idx
+                    )  #######nog naar kijken
 
         else:
             torch.save(
                 data,
                 os.path.join(
                     self.processed_dir,
-                    f"{self._base_filename}_{graph_idx}.{self._file_extension}",
+                    self.__get_graph_filename(graph_idx),
                 ),
             )
             # record naming scheme/graph indices, for loading/skipping processing later
@@ -383,6 +390,12 @@ class EventGraphDataset(Dataset):
         else:
             return enumerate(iterable)
 
+    def __get_graph_filename(self, graph_idx: int, subgraph_idx: int = None) -> str:
+        if subgraph_idx:
+            return f"{self._base_filename}_{graph_idx}_{subgraph_idx}.{self._file_extension}"
+        else:
+            return f"{self._base_filename}_{graph_idx}.{self._file_extension}"
+
     def len(self) -> int:
         if self.train or self.test or self.validation:
             if len(self.data.feature_graphs) == self._size:
@@ -398,9 +411,14 @@ class EventGraphDataset(Dataset):
         - Equivalent to __getitem__ in PyTorch
         - Is not needed for PyG's InMemoryDataset
         """
+        if self.subgraph_params.actual_subgraph_sampling:
+            filename = self.__get_graph_filename(graph_idx, subgraph_idx)
+        else:
+            filename = self.__get_graph_filename(graph_idx)
+
         return torch.load(
             os.path.join(
                 self.processed_dir,
-                f"{self._base_filename}_{graph_idx}.{self._file_extension}",
+                filename,
             )
         )
