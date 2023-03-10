@@ -1,5 +1,5 @@
 # import pandas as pd
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import numpy as np
 from tqdm import tqdm
 import os
@@ -16,9 +16,9 @@ print(f"Torch geometric version: {torch_geometric.__version__}")
 
 @dataclass
 class SubGraphParameters:
-    __slots__ = "size", "graph_subgraph_index_map"
+    # __slots__ = "size", "graph_subgraph_index_map"
     size: int
-    graph_subgraph_index_map: dict[int, list[int]] = {}
+    graph_subgraph_index_map: dict[int, list[int]] = field(default_factory=dict)
 
     def add_subgraph(self, graph_idx: int, subgraph_idx: int) -> None:
         if graph_idx in self.graph_subgraph_index_map:
@@ -108,6 +108,7 @@ class EventGraphDataset(Dataset):
 
         with open(self.raw_paths[0], "rb") as file:
             self.data = pickle.load(file)
+        # if subgraph, pass sg_idx list also, and iterate over it
 
         if self.train:
             return [
@@ -116,7 +117,11 @@ class EventGraphDataset(Dataset):
             ]
         if self.validation:
             if self.subgraph_params.size:
-                pass
+                return [
+                    f"{self._base_filename}_{graph_idx}.{self._file_extension}" for subgraph_idx in
+                    for 
+                    [[graph_idx]*len(subgraph_idxs),subgraph_idxs in self.subgraph_params.graph_subgraph_index_map.items())
+                ]
             return [
                 f"{self._base_filename}_{graph_idx}.{self._file_extension}"
                 for graph_idx in range(len(self.data.validation_indices))
@@ -151,22 +156,22 @@ class EventGraphDataset(Dataset):
 
         if self.train:
             # Retrieve feature graphs with train indices and write to disk
-            self._graphs_to_disk(
+            self._feature_graphs_to_disk(
                 [self.data.feature_graphs[i] for i in self.data.train_indices]
             )
         elif self.validation:
             # Retrieve graphs with validation indices and write to disk
-            self._graphs_to_disk(
+            self._feature_graphs_to_disk(
                 [self.data.feature_graphs[i] for i in self.data.validation_indices]
             )
         elif self.test:
             # Retrieve graphs with test indices and write to disk
-            self._graphs_to_disk(
+            self._feature_graphs_to_disk(
                 [self.data.feature_graphs[i] for i in self.data.test_indices]
             )
         else:
             # Write all graphs to disk
-            self._graphs_to_disk(self.data.feature_graphs)
+            self._feature_graphs_to_disk(self.data.feature_graphs)
 
     def _feature_graphs_to_disk(
         self,
@@ -179,8 +184,8 @@ class EventGraphDataset(Dataset):
         ):
             # Save a feature_graph instance
             total_num_feature_graphs += [
-                self._graph_as_data_to_disk(
-                    graph=feature_graph,
+                self._feature_graph_to_graph_to_disk(
+                    feature_graph=feature_graph,
                     graph_idx=index,
                 )
             ]
@@ -228,7 +233,6 @@ class EventGraphDataset(Dataset):
             )
             # extract subgraph and label for each node set as terminal node
             k = self.subgraph_params.size
-            num_graphs = 0
             if len(sorted_node_indices) != 0:
                 for i in range(k - 1, len(sorted_node_indices)):
                     subgraph_idx = i - (k - 1)
@@ -245,12 +249,16 @@ class EventGraphDataset(Dataset):
                             f"{self._base_filename}_{graph_idx}_{subgraph_idx}.{self._file_extension}",
                         ),
                     )
-                    num_graphs += 1
                     self.subgraph_params.add_subgraph(graph_idx, subgraph_idx)
 
             # Return count of graph data objects that were saved
             # return max(graph.size - self.subgraph_params.size, 1)
-            return num_graphs
+            return sum(
+                [
+                    len(v)
+                    for k, v in self.subgraph_params.graph_subgraph_index_map.items()
+                ]
+            )
         else:
             torch.save(
                 data,
