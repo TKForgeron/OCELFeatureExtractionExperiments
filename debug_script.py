@@ -31,6 +31,10 @@ from sklearn.preprocessing import StandardScaler, PowerTransformer
 #     # evaluate_gnn,
 # )
 
+# PyG
+import torch
+from replicating.ocpa_PyG_integration.EventGraphDataset import EventGraphDataset
+
 # Global variables
 from replicating.experiment_config import STORAGE_PATH, RANDOM_SEED, TARGET_LABEL
 
@@ -44,6 +48,7 @@ parameters = {
     "sep": ",",
 }
 file_path_object_attribute_table = None
+
 
 # Importing OCEL
 ocel = csv_import_factory.apply(

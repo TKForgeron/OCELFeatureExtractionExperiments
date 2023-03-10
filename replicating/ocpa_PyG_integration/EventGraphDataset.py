@@ -8,6 +8,7 @@ import pickle
 import torch
 import torch_geometric
 from torch_geometric.data import Dataset, Data
+from warnings import warn
 
 print(f"Torch version: {torch.__version__}")
 print(f"Cuda available: {torch.cuda.is_available()}")
@@ -16,15 +17,46 @@ print(f"Torch geometric version: {torch_geometric.__version__}")
 
 @dataclass
 class SubGraphParameters:
+    """
+    Class that holds information on how the Feature_Graphs are subgraph-sampled.
+
+    If subgraph sampling is not used in EventGraphDataset,
+     then 'actual_subgraph_sampling' is set to 'False'
+     and 'graph_indices' keeps a list of the full graphs that were saved.
+    """
+
     # __slots__ = "size", "graph_subgraph_index_map"
     size: int
+    path: str
+    actual_subgraph_sampling: bool = field(init=False)
+    graph_indices: set[int] = field(default_factory=set)
     graph_subgraph_index_map: dict[int, list[int]] = field(default_factory=dict)
 
-    def add_subgraph(self, graph_idx: int, subgraph_idx: int) -> None:
-        if graph_idx in self.graph_subgraph_index_map:
-            self.graph_subgraph_index_map[graph_idx].append(subgraph_idx)
+    def __post_init__(self):
+        if self.size:
+            self.actual_subgraph_sampling = True
         else:
-            self.graph_subgraph_index_map[graph_idx] = [subgraph_idx]
+            self.actual_subgraph_sampling = False
+        self.path = self.path
+
+    def add_subgraph(self, graph_idx: int, subgraph_idx: int) -> None:
+        if self.actual_subgraph_sampling:
+            if graph_idx in self.graph_subgraph_index_map:
+                self.graph_subgraph_index_map[graph_idx].append(subgraph_idx)
+            else:
+                self.graph_subgraph_index_map[graph_idx] = [subgraph_idx]
+        else:
+            warn(
+                f"You are trying to add a subgraph, while `SubGraphParameters.actual_subgraph_sampling` is set to '{self.actual_subgraph_sampling}'"
+            )
+
+    def add_graph(self, graph_idx: int) -> None:
+        if not self.actual_subgraph_sampling:
+            self.graph_indices.add(graph_idx)
+        else:
+            warn(
+                f"You are trying to add a full graph, while `SubGraphParameters.actual_subgraph_sampling` is set to '{self.actual_subgraph_sampling}'"
+            )
 
 
 class EventGraphDataset(Dataset):
@@ -80,7 +112,7 @@ class EventGraphDataset(Dataset):
         """
         self.filename = filename
         self.label_key = label_key
-        self.subgraph_params = SubGraphParameters(size_subgraph_samples)
+        self.subgraph_params = SubGraphParameters(size=size_subgraph_samples, path=root)
         self.train = train
         self.validation = validation
         self.test = test
@@ -108,25 +140,41 @@ class EventGraphDataset(Dataset):
 
         with open(self.raw_paths[0], "rb") as file:
             self.data = pickle.load(file)
-        # if subgraph, pass sg_idx list also, and iterate over it
 
-        if self.train:
+        with open(self.processed_dir, "rb") as file:
+            self.data = pickle.load(file)
+
+        print(self.processed_dir)
+        # open the subgraphparams.pt!
+
+        if self.subgraph_params.size:
+            get_filestring = (
+                lambda g_id, sg_id: f"{self._base_filename}_{g_id}_{sg_id}.{self._file_extension}"
+            )
+            map_items = self.subgraph_params.graph_subgraph_index_map.items()
+            flatten = lambda l: [item for sublist in l for item in sublist]
+
+            return flatten(
+                [
+                    [
+                        get_filestring(mapping[0], subgraph_idxs)
+                        for subgraph_idxs in mapping[1]
+                    ]
+                    for mapping in map_items
+                ]
+            )
+
+        elif self.train:
             return [
                 f"{self._base_filename}_{graph_idx}.{self._file_extension}"
                 for graph_idx in range(len(self.data.train_indices))
             ]
-        if self.validation:
-            if self.subgraph_params.size:
-                return [
-                    f"{self._base_filename}_{graph_idx}.{self._file_extension}" for subgraph_idx in
-                    for 
-                    [[graph_idx]*len(subgraph_idxs),subgraph_idxs in self.subgraph_params.graph_subgraph_index_map.items())
-                ]
+        elif self.validation:
             return [
                 f"{self._base_filename}_{graph_idx}.{self._file_extension}"
                 for graph_idx in range(len(self.data.validation_indices))
             ]
-        if self.test:
+        elif self.test:
             return [
                 f"{self._base_filename}_{graph_idx}.{self._file_extension}"
                 for graph_idx in range(len(self.data.test_indices))
@@ -173,27 +221,39 @@ class EventGraphDataset(Dataset):
             # Write all graphs to disk
             self._feature_graphs_to_disk(self.data.feature_graphs)
 
+        with open(
+            os.path.join(self.processed_dir, "subgraph_parameters.pt"), "wb"
+        ) as file:
+            pickle.dump(self.subgraph_params, file)
+
     def _feature_graphs_to_disk(
         self,
         feature_graphs: list[FeatureStorage.Feature_Graph],
     ):
-        total_num_feature_graphs = []
         # Save each feature_graph instance
         for index, feature_graph in self.__custom_verbosity_enumerate(
             feature_graphs, miniters=self._verbosity
         ):
             # Save a feature_graph instance
-            total_num_feature_graphs += [
-                self._feature_graph_to_graph_to_disk(
-                    feature_graph=feature_graph,
-                    graph_idx=index,
-                )
-            ]
-        self.size = sum(total_num_feature_graphs)
+
+            self._feature_graph_to_graph_to_disk(
+                feature_graph=feature_graph,
+                graph_idx=index,
+            )
+        # Set size of the dataset (this depends on whether subgraphs were sampled)
+        if self.subgraph_params.actual_subgraph_sampling:
+            self.size = sum(
+                [
+                    len(subgraph_idxs)
+                    for subgraph_idxs in self.subgraph_params.graph_subgraph_index_map.values()
+                ]
+            )
+        else:
+            self.size = len(self.subgraph_params.graph_indices)
 
     def _feature_graph_to_graph_to_disk(
         self, feature_graph: FeatureStorage.Feature_Graph, graph_idx: int
-    ) -> int:
+    ) -> None:
         """
         Saves a FeatureStorage.Feature_Graph object as PyG Data object(s) to disk.
 
@@ -251,14 +311,6 @@ class EventGraphDataset(Dataset):
                     )
                     self.subgraph_params.add_subgraph(graph_idx, subgraph_idx)
 
-            # Return count of graph data objects that were saved
-            # return max(graph.size - self.subgraph_params.size, 1)
-            return sum(
-                [
-                    len(v)
-                    for k, v in self.subgraph_params.graph_subgraph_index_map.items()
-                ]
-            )
         else:
             torch.save(
                 data,
@@ -267,7 +319,6 @@ class EventGraphDataset(Dataset):
                     f"{self._base_filename}_{graph_idx}.{self._file_extension}",
                 ),
             )
-            return 1
 
     def _split_X_y(
         self,
