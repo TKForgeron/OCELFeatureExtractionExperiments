@@ -138,16 +138,19 @@ class EventGraphDataset(Dataset):
     def processed_file_names(self):
         """If these files are found in raw_dir, processing is skipped"""
 
-        with open(self.raw_paths[0], "rb") as file:
-            self.data = pickle.load(file)
+        # with open(self.raw_paths[0], "rb") as file:
+        #     self.data = pickle.load(file)
+        try:
+            with open(
+                os.path.join(self.processed_dir, "subgraph_parameters.pt"), "rb"
+            ) as file:
+                self.subgraph_params = pickle.load(file)
+        except:
+            # the dataset has not (or not with the same settings) run before
+            # so return an empty list, and don't skip processing
+            return []
 
-        with open(self.processed_dir, "rb") as file:
-            self.data = pickle.load(file)
-
-        print(self.processed_dir)
-        # open the subgraphparams.pt!
-
-        if self.subgraph_params.size:
+        if self.subgraph_params.actual_subgraph_sampling:
             get_filestring = (
                 lambda g_id, sg_id: f"{self._base_filename}_{g_id}_{sg_id}.{self._file_extension}"
             )
@@ -163,26 +166,10 @@ class EventGraphDataset(Dataset):
                     for mapping in map_items
                 ]
             )
-
-        elif self.train:
-            return [
-                f"{self._base_filename}_{graph_idx}.{self._file_extension}"
-                for graph_idx in range(len(self.data.train_indices))
-            ]
-        elif self.validation:
-            return [
-                f"{self._base_filename}_{graph_idx}.{self._file_extension}"
-                for graph_idx in range(len(self.data.validation_indices))
-            ]
-        elif self.test:
-            return [
-                f"{self._base_filename}_{graph_idx}.{self._file_extension}"
-                for graph_idx in range(len(self.data.test_indices))
-            ]
         else:
             return [
                 f"{self._base_filename}_{graph_idx}.{self._file_extension}"
-                for graph_idx in range(len(self.data.feature_graphs))
+                for graph_idx in self.subgraph_params.graph_indices
             ]
 
     def _set_size(self, size: int) -> None:
@@ -309,6 +296,7 @@ class EventGraphDataset(Dataset):
                             f"{self._base_filename}_{graph_idx}_{subgraph_idx}.{self._file_extension}",
                         ),
                     )
+                    # record naming scheme/graph indices, for loading/skipping processing later
                     self.subgraph_params.add_subgraph(graph_idx, subgraph_idx)
 
         else:
@@ -319,6 +307,8 @@ class EventGraphDataset(Dataset):
                     f"{self._base_filename}_{graph_idx}.{self._file_extension}",
                 ),
             )
+            # record naming scheme/graph indices, for loading/skipping processing later
+            self.subgraph_params.add_graph(graph_idx)
 
     def _split_X_y(
         self,
