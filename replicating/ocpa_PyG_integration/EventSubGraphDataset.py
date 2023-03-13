@@ -15,13 +15,35 @@ print(f"Cuda available: {torch.cuda.is_available()}")
 print(f"Torch geometric version: {torch_geometric.__version__}")
 
 
-class EventGraphDataset(Dataset):
+@dataclass
+class SubGraphParameters:
+    """
+    Class that holds information on how the Feature_Graphs are subgraph-sampled.
+
+    If subgraph sampling is not used in EventGraphDataset,
+     then 'actual_subgraph_sampling' is set to 'False'
+     and 'graph_indices' keeps a list of the full graphs that were saved.
+    """
+
+    # __slots__ = "size", "graph_subgraph_index_map"
+    size: int
+    graph_subgraph_index_map: dict[int, list[int]] = field(default_factory=dict)
+
+    def add_subgraph(self, graph_idx: int, subgraph_idx: int) -> None:
+        if graph_idx in self.graph_subgraph_index_map:
+            self.graph_subgraph_index_map[graph_idx].append(subgraph_idx)
+        else:
+            self.graph_subgraph_index_map[graph_idx] = [subgraph_idx]
+
+
+class EventSubGraphDataset(Dataset):
     """
     Class that serves as an adapter between ocpa and PyG.
 
     Specifically, it imports from a Feature_Storage class and works with PyG for implementing a GNN.
 
     TODO:
+    - add if statements handling subgraph samplingn naming convention in: processed_file_names() and get()
     - currently, we record y per node, maybe we should try saving one y per graph (only y for the last node in a graph)
     - add event indices as node indices, like in gnn_utils.py (generate_graph_dataset())
     - Add possibility to load Feature_Storage object from memory, instead of pickled file.
@@ -32,6 +54,7 @@ class EventGraphDataset(Dataset):
         root,
         filename,
         label_key: str,
+        size_subgraph_samples: int,
         train: bool = False,
         validation: bool = False,
         test: bool = False,
@@ -66,11 +89,12 @@ class EventGraphDataset(Dataset):
         """
         self.filename = filename
         self.label_key = label_key
+        self.subgraph_params = SubGraphParameters(size=size_subgraph_samples)
         self.train = train
         self.validation = validation
         self.test = test
         self._verbosity = verbosity
-        self._base_filename = "graph"
+        self._base_filename = "subgraph"
         if self.train:
             self._base_filename += "_train"
         elif self.validation:
@@ -78,7 +102,7 @@ class EventGraphDataset(Dataset):
         elif self.test:
             self._base_filename += "_test"
         self._file_extension = file_extension
-        super(EventGraphDataset, self).__init__(root, transform, pre_transform)
+        super(EventSubGraphDataset, self).__init__(root, transform, pre_transform)
 
     @property
     def raw_file_names(self):
@@ -90,42 +114,30 @@ class EventGraphDataset(Dataset):
     @property
     def processed_file_names(self):
         """If these files are found in raw_dir, processing is skipped"""
+        if not hasattr(self, "data"):
+            with open(self.raw_paths[0], "rb") as file:
+                self.data = pickle.load(file)
+        try:
+            with open(
+                os.path.join(self.processed_dir, "subgraph_parameters.pt"), "rb"
+            ) as file:
+                subgraph_parameters = pickle.load(file)
+            if subgraph_parameters.size == self.subgraph_params.size:
+                self.subgraph_params = subgraph_parameters
+        except:
+            # the dataset has not (or not with the same settings) run before
+            # so return an empty list, and don't skip processing
+            return []
 
-        # Retrieve Feature_Storage object from disk
-        with open(self.raw_paths[0], "rb") as file:
-            self.data = pickle.load(file)
+        flatten = lambda l: [item for sublist in l for item in sublist]
+        subgraph_indices_list = flatten(
+            self.subgraph_params.graph_subgraph_index_map.values()
+        )
 
-        if self.train:
-            processed_file_names = [
-                self.__get_graph_filename(i)
-                for i in range(len(self.data.train_indices))
-            ]
-        elif self.validation:
-            processed_file_names = [
-                self.__get_graph_filename(i)
-                for i in range(len(self.data.validation_indices))
-            ]
-        elif self.test:
-            processed_file_names = [
-                self.__get_graph_filename(i) for i in range(len(self.data.test_indices))
-            ]
-        else:
-            processed_file_names = [
-                self.__get_graph_filename(i)
-                for i in range(len(self.data.feature_graphs))
-            ]
-        self.size = len(processed_file_names)
-        return processed_file_names
-
-    def _set_size(self, size: int) -> None:
-        """Sets the number of graphs stored in this EventGraphDataset object."""
-        self._size = size
-
-    def _get_size(self) -> int:
-        """Gets the number of graphs stored in this EventGraphDataset object."""
-        return self._size
-
-    size: int = property(_get_size, _set_size)
+        return [
+            self.__get_graph_filename(subgraph_idx)
+            for subgraph_idx in subgraph_indices_list
+        ]
 
     def process(self):
         """Processes a Feature_Storage object into PyG instance graph objects"""
@@ -153,28 +165,50 @@ class EventGraphDataset(Dataset):
             # Write all graphs to disk
             self._feature_graphs_to_disk(self.data.feature_graphs)
 
+        with open(
+            os.path.join(self.processed_dir, "subgraph_parameters.pt"), "wb"
+        ) as file:
+            pickle.dump(self.subgraph_params, file)
+
     def _feature_graphs_to_disk(
         self,
         feature_graphs: list[FeatureStorage.Feature_Graph],
     ):
-        # Set size of the dataset
-        self.size = len(feature_graphs)
+        num_subgraphs_per_graph = None
+        # Set size of the dataset (this depends on whether subgraphs were sampled)
+        num_nodes_per_feature_graph = [len(fg.nodes) for fg in feature_graphs]
+        num_subgraphs_per_graph = [
+            max(num_nodes - self.subgraph_params.size, 0)
+            for num_nodes in num_nodes_per_feature_graph
+        ]
+
         # Save each feature_graph instance
-        for index, feature_graph in self.__custom_verbosity_enumerate(
+        for feature_graph_idx, feature_graph in self.__custom_verbosity_enumerate(
             feature_graphs, miniters=self._verbosity
         ):
-            # Save a feature_graph instance
-            self._feature_graph_to_graph_to_disk(
-                feature_graph=feature_graph,
-                graph_idx=index,
-            )
+            # only try to sample subgraph if we know its possible to sample given size subgraphs
+            if num_subgraphs_per_graph[feature_graph_idx]:
+                num_subgraphs_per_graph[feature_graph_idx]
+                # Save a feature_graph instance
+                self._feature_graph_to_subgraph_to_disk(
+                    feature_graph=feature_graph,
+                    graph_idx=feature_graph_idx,
+                    num_subgraphs_per_graph=num_subgraphs_per_graph,
+                )
 
-    def _feature_graph_to_graph_to_disk(
+    def _feature_graph_to_subgraph_to_disk(
         self,
         feature_graph: FeatureStorage.Feature_Graph,
         graph_idx: int,
+        num_subgraphs_per_graph: list[int],
     ) -> None:
-        """Saves a FeatureStorage.Feature_Graph object as PyG Data object(s) to disk."""
+        """
+        Saves a FeatureStorage.Feature_Graph object as PyG Data object(s) to disk.
+
+        Returns amount of PyG Data object instances that are saved, which depends
+         on whether subgraphs will be sampled, and if yes, how large they will be
+         (explicated in: EventGraphDataset.subgraph_params.size)
+        """
         # Split off labels from nodes,
         # and return full graph (cleansed of labels), and list of labels
         labels = self._split_X_y(feature_graph, self.label_key)
@@ -185,20 +219,51 @@ class EventGraphDataset(Dataset):
         # Get adjacency matrix
         edge_index = self._get_adjacency_matrix(feature_graph)
         # Create graph data object
-        data = Data(
+        graph_data = Data(
             y=labels,
             x=node_feats,
             edge_index=edge_index,
             # edge_attr=edge_feats,
         )
 
-        torch.save(
-            data,
-            os.path.join(
-                self.processed_dir,
-                self.__get_graph_filename(graph_idx),
-            ),
+        # idxs_to_save = range(num_subgraphs_per_graph[graph_idx])
+        # Retrieve indices that would sort the nodes in the graph
+        sorted_node_indices = np.argsort(
+            [
+                self.__get_node_index_mapping(feature_graph)[node.event_id]
+                for node in feature_graph.nodes
+            ]
         )
+        # extract subgraph and label for each node set as terminal node
+        num_subgraphs_per_graph_until_current_idx = num_subgraphs_per_graph[:graph_idx]
+        current_idx = sum(
+            num_subgraphs_per_graph_until_current_idx
+        ) + self.__count_graphs_where_subgraph_sampling_possible(
+            num_subgraphs_per_graph_until_current_idx
+        )  # calculate how many graphs are already saved
+        # print("current_idx", current_idx)
+        k = self.subgraph_params.size
+        if len(sorted_node_indices) != 0:
+            for i in range(k - 1, len(sorted_node_indices)):
+                subgraph_idx = i - (k - 1)
+                subgraph = graph_data.subgraph(
+                    subset=torch.tensor(range(subgraph_idx, i + 1), dtype=torch.long)
+                )  # include last event
+                # subgraph_label = subgraph.ndata["remaining_time"].numpy()[-1]
+                # print("  subgraph_idx", subgraph_idx)
+                torch.save(
+                    subgraph,
+                    os.path.join(
+                        self.processed_dir,
+                        self.__get_graph_filename(
+                            current_idx + subgraph_idx
+                        ),  # give correct/findable/doortellend (sub)graph_idx
+                    ),
+                )
+                # record which subgraphs belong to which graphs
+                self.subgraph_params.add_subgraph(graph_idx, current_idx + subgraph_idx)
+                # print("  Graph saved: ", current_idx + subgraph_idx)
+                # print("_" * 20)
 
     def _split_X_y(
         self,
@@ -249,7 +314,7 @@ class EventGraphDataset(Dataset):
         # Map event_id to node_index (counting from 0) using a dictionary
         node_index_map = self.__get_node_index_mapping(feature_graph)
         # Actually map event_id to node_index
-        # so we have an index-based (event_id-agnostic) directed COO adjacency_matrix.
+        # so we have an feature_graph_idx-based (event_id-agnostic) directed COO adjacency_matrix.
         adjacency_matrix_COO = [
             [node_index_map[e.source] for e in feature_graph.edges],
             [node_index_map[e.target] for e in feature_graph.edges],
@@ -273,11 +338,14 @@ class EventGraphDataset(Dataset):
         else:
             return enumerate(iterable)
 
+    def __count_graphs_where_subgraph_sampling_possible(self, xs: list[int]) -> int:
+        return sum([bool(x) for x in xs if x])
+
     def __get_graph_filename(self, graph_idx: int) -> str:
         return f"{self._base_filename}_{graph_idx}.{self._file_extension}"
 
     def len(self) -> int:
-        return self.size
+        return len(self.processed_file_names)
 
     def get(self, graph_idx):
         """
