@@ -102,6 +102,8 @@ class EventSubGraphDataset(Dataset):
         elif self.test:
             self._base_filename += "_test"
         self._file_extension = file_extension
+        self._subgraph_params_path = self._base_filename + "_params"
+        # self._processed_file_names = []
         super(EventSubGraphDataset, self).__init__(root, transform, pre_transform)
 
     @property
@@ -112,32 +114,49 @@ class EventSubGraphDataset(Dataset):
         return self.filename
 
     @property
-    def processed_file_names(self):
+    def processed_file_names(self) -> list[str]:
         """If these files are found in raw_dir, processing is skipped"""
+        # retrieve cached processed_file_names
+        if hasattr(self, "_processed_file_names"):
+            return self._processed_file_names
+
+        # load feature_storage object if we don't have it yet
         if not hasattr(self, "data"):
             with open(self.raw_paths[0], "rb") as file:
                 self.data = pickle.load(file)
-        try:
-            with open(
-                os.path.join(self.processed_dir, "subgraph_parameters.pt"), "rb"
-            ) as file:
-                subgraph_parameters = pickle.load(file)
-            if subgraph_parameters.size == self.subgraph_params.size:
-                self.subgraph_params = subgraph_parameters
-        except:
-            # the dataset has not (or not with the same settings) run before
-            # so return an empty list, and don't skip processing
-            return []
+
+        # if possible, load subgraph_params.pt when we don't yet have it
+        if not self.subgraph_params.graph_subgraph_index_map:
+            try:
+                with open(
+                    os.path.join(
+                        self.processed_dir,
+                        f"{self._subgraph_params_path}.{self._file_extension}",
+                    ),
+                    "rb",
+                ) as file:
+                    subgraph_parameters = pickle.load(file)
+                # only load when we're thinking of the same subgraph_parameters
+                if subgraph_parameters.size == self.subgraph_params.size:
+                    self.subgraph_params = subgraph_parameters
+            except Exception as e:
+                print(e)
+                print(
+                    "Dataset hasn't (or not with the same settings) run before, so don't skip processing"
+                )
+                # the dataset has not (or not with the same settings) run before
+                # so return an empty list, and don't skip processing
+                return []
 
         flatten = lambda l: [item for sublist in l for item in sublist]
         subgraph_indices_list = flatten(
             self.subgraph_params.graph_subgraph_index_map.values()
         )
-
-        return [
+        self._processed_file_names = [
             self.__get_graph_filename(subgraph_idx)
             for subgraph_idx in subgraph_indices_list
         ]
+        return self._processed_file_names
 
     def process(self):
         """Processes a Feature_Storage object into PyG instance graph objects"""
@@ -166,7 +185,11 @@ class EventSubGraphDataset(Dataset):
             self._feature_graphs_to_disk(self.data.feature_graphs)
 
         with open(
-            os.path.join(self.processed_dir, "subgraph_parameters.pt"), "wb"
+            os.path.join(
+                self.processed_dir,
+                f"{self._subgraph_params_path}.{self._file_extension}",
+            ),
+            "wb",
         ) as file:
             pickle.dump(self.subgraph_params, file)
 

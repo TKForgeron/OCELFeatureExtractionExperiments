@@ -54,7 +54,7 @@ feature_storage = feature_factory.apply(ocel, event_based_features=feature_set)
 
 print("Pickling FeatureStorage object")
 with open(
-    f"{STORAGE_PATH}/raw/BPI2017-feature_storage-[C2,D1,P2,P3,O3].pkl",
+    f"{STORAGE_PATH}/raw/BPI17-feature_storage-[C2,D1,P2,P3,O3].fs",
     "wb",
 ) as file:
     pickle.dump(feature_storage, file)
