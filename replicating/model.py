@@ -15,12 +15,14 @@ from torch_geometric.nn import GCNConv, GATConv
 class GCN(torch.nn.Module):
     def __init__(self, num_node_features: int, hyperparams: dict):
         super().__init__()
-
+        self.hyperparams = hyperparams
         self.gconv1 = GCNConv(num_node_features, hyperparams["num_hidden_features"])
         self.gconv2 = GCNConv(
             hyperparams["num_hidden_features"], hyperparams["num_hidden_features"]
         )
-        self.out = Linear(hyperparams["num_hidden_features"], 1)
+        self.out = Linear(
+            hyperparams["num_hidden_features"] * hyperparams["size_subgraph_samples"], 1
+        )
 
     def forward(self, x, edge_index):
         # x, edge_index = data.x, data.edge_index
@@ -35,9 +37,21 @@ class GCN(torch.nn.Module):
         x = x.relu()
         # x = F.dropout(x, p=0.5, training=self.training)
 
+        # Reshape layer, to account for graph-level predictions,
+        # since we're given concatenated subgraph samples each mini batch
+        x = torch.reshape(
+            x,
+            (
+                int(x.shape[0] / self.hyperparams["size_subgraph_samples"]),
+                int(
+                    x.shape[0]
+                    * x.shape[1]
+                    / (x.shape[0] / self.hyperparams["size_subgraph_samples"])
+                ),
+            ),
+        )
+
         # Output layer
-        # x = F.mse_loss()
-        # x = tf.reshape(h, (int(h.shape[0] / 4), (4 * 24))) MAKE THIS IN PYTORCH?
         out = self.out(x)
         return out
 

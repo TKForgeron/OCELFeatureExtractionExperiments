@@ -15,14 +15,13 @@ from tqdm import tqdm
 from copy import deepcopy
 from ocpa.objects.log.ocel import OCEL
 
+
 # create graph dataset & labels for remaining time regression
 def generate_graph_dataset(feature_graph_list, indices, ocel: OCEL):
-
     idx = indices
     graph_list = []
     label_list = []
     for gid in tqdm(idx):
-
         # copy graph to prevent changes to feature storage
         graph = deepcopy(feature_graph_list[gid])
 
@@ -198,14 +197,12 @@ class GraphDataLoader(tf.keras.utils.Sequence):
 # custom Graph Convolutional Network as tf.keras subclass for graph regression
 class GCN(tf.keras.Model):
     def __init__(self, n_input_feats, n_hidden_feats):
-
         super().__init__()
         self.gconv_1 = GraphConv(n_input_feats, n_hidden_feats)
         self.gconv_2 = GraphConv(n_hidden_feats, n_hidden_feats)
         self.dense = tf.keras.layers.Dense(1, activation="linear")
 
     def call(self, g, input_features):
-
         h = self.gconv_1(g, g.ndata["features"])
         h = tf.keras.activations.relu(h)
         h = self.gconv_2(g, h)
@@ -228,3 +225,4 @@ def evaluate_gnn(data_loader, gnn_model):
     predictions = np.concatenate(predictions)
     labels = np.concatenate(labels)
     return predictions, labels
+

@@ -43,7 +43,6 @@ class EventSubGraphDataset(Dataset):
     Specifically, it imports from a Feature_Storage class and works with PyG for implementing a GNN.
 
     TODO:
-    - add if statements handling subgraph samplingn naming convention in: processed_file_names() and get()
     - currently, we record y per node, maybe we should try saving one y per graph (only y for the last node in a graph)
     - add event indices as node indices, like in gnn_utils.py (generate_graph_dataset())
     - Add possibility to load Feature_Storage object from memory, instead of pickled file.
@@ -140,9 +139,9 @@ class EventSubGraphDataset(Dataset):
                 if subgraph_parameters.size == self.subgraph_params.size:
                     self.subgraph_params = subgraph_parameters
             except Exception as e:
-                print(e)
+                # print(e)
                 print(
-                    "Dataset hasn't (or not with the same settings) run before, so don't skip processing"
+                    f"No EventSubGraphDataset found with this configuration in '{self.processed_dir}'. Proceeding to processing..."
                 )
                 # the dataset has not (or not with the same settings) run before
                 # so return an empty list, and don't skip processing
@@ -249,7 +248,6 @@ class EventSubGraphDataset(Dataset):
             # edge_attr=edge_feats,
         )
 
-        # idxs_to_save = range(num_subgraphs_per_graph[graph_idx])
         # Retrieve indices that would sort the nodes in the graph
         sorted_node_indices = np.argsort(
             [
@@ -264,7 +262,6 @@ class EventSubGraphDataset(Dataset):
         ) + self.__count_graphs_where_subgraph_sampling_possible(
             num_subgraphs_per_graph_until_current_idx
         )  # calculate how many graphs are already saved
-        # print("current_idx", current_idx)
         k = self.subgraph_params.size
         if len(sorted_node_indices) != 0:
             for i in range(k - 1, len(sorted_node_indices)):
@@ -272,8 +269,10 @@ class EventSubGraphDataset(Dataset):
                 subgraph = graph_data.subgraph(
                     subset=torch.tensor(range(subgraph_idx, i + 1), dtype=torch.long)
                 )  # include last event
-                # subgraph_label = subgraph.ndata["remaining_time"].numpy()[-1]
-                # print("  subgraph_idx", subgraph_idx)
+                subgraph.y = subgraph.y[-1]
+                # subgraph = GraphLevelData(
+                #     y=subgraph.y[-1], x=subgraph.x, edge_index=subgraph.edge_index
+                # )
                 torch.save(
                     subgraph,
                     os.path.join(
@@ -285,8 +284,6 @@ class EventSubGraphDataset(Dataset):
                 )
                 # record which subgraphs belong to which graphs
                 self.subgraph_params.add_subgraph(graph_idx, current_idx + subgraph_idx)
-                # print("  Graph saved: ", current_idx + subgraph_idx)
-                # print("_" * 20)
 
     def _split_X_y(
         self,
@@ -379,3 +376,11 @@ class EventSubGraphDataset(Dataset):
             os.path.join(self.processed_dir, self.__get_graph_filename(graph_idx))
         )
         return data
+
+
+class GraphLevelData(Data):
+    def __cat_dim__(self, key, value, *args, **kwargs):
+        if key == "x":
+            return None
+        else:
+            return super().__cat_dim__(key, value, *args, **kwargs)

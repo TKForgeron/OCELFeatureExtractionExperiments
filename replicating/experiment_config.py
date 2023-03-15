@@ -1,6 +1,6 @@
 import ocpa.algo.predictive_monitoring.factory as feature_factory
 
 STORAGE_PATH = "data/ocpa-processed"
-RANDOM_SEED = 42
+RANDOM_SEED = 3
 TARGET_LABEL = (feature_factory.EVENT_REMAINING_TIME, ())
 FEATURE_STORAGE_FILE = "BPI17-scaled-split.fs"
