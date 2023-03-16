@@ -15,7 +15,12 @@ import ocpa.algo.predictive_monitoring.factory as feature_factory
 from sklearn.preprocessing import StandardScaler, PowerTransformer
 
 # Global configuration
-from experiment_config import STORAGE_PATH, RANDOM_SEED, TARGET_LABEL
+from experiment_config import (
+    STORAGE_PATH,
+    FEATURE_STORAGE_FILE,
+    RANDOM_SEED,
+    TARGET_LABEL,
+)
 
 
 def print_time_taken(start_time: float, prefix: str = "") -> float:
