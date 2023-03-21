@@ -105,7 +105,7 @@ class Feature_Storage:
 
         def _get_size(self)->int:
             return len(self._get_nodes())
-        
+
         def replace_edges(self, edges):
             self._edges = [Feature_Storage.Feature_Graph.Edge(source.event_id, target.event_id, objects=[]
                 )

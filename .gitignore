@@ -28,6 +28,7 @@
 
 # Environments
 .env
+.env_secrets
 .venv
 env/
 venv/
