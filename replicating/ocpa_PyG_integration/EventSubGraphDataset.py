@@ -14,6 +14,7 @@ from tqdm import tqdm
 print(f"Torch version: {torch.__version__}")
 print(f"Cuda available: {torch.cuda.is_available()}")
 print(f"Torch geometric version: {torch_geometric.__version__}")
+print()
 
 
 @dataclass

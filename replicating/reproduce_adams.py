@@ -553,7 +553,7 @@ if __name__ == "__main__":
         val_loader=val_loader,
         test_loader=test_loader,
         metric=torch.nn.L1Loss(),
-        device=device,
+        device=torch.device("cpu"),
         verbose=verbose,
     )
     denormalized_evaluation_dict = denormalize_evaluation(normalized_evaluation_dict)
