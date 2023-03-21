@@ -20,6 +20,7 @@ class GCN(torch.nn.Module):
         self.gconv2 = GCNConv(
             hyperparams["num_hidden_features"], hyperparams["num_hidden_features"]
         )
+        # self.dropout = torch.nn.Dropout(p=0.2)
         self.out = Linear(
             hyperparams["num_hidden_features"] * hyperparams["size_subgraph_samples"], 1
         )
@@ -30,12 +31,12 @@ class GCN(torch.nn.Module):
         # First Message Passing Layer (Transformation)
         x = self.gconv1(x, edge_index)
         x = x.relu()
-        # x = F.dropout(x, p=0.5, training=self.training)
+        x = F.dropout(x, p=0.5, training=self.training)
 
         # Second Message Passing Layer
         x = self.gconv2(x, edge_index)
         x = x.relu()
-        # x = F.dropout(x, p=0.5, training=self.training)
+        x = F.dropout(x, p=0.5, training=self.training)
 
         # Reshape layer, to account for graph-level predictions,
         # since we're given concatenated subgraph samples each mini batch
@@ -62,12 +63,15 @@ class GCN(torch.nn.Module):
 class GAT(torch.nn.Module):
     def __init__(self, num_node_features: int, hyperparams: dict):
         super().__init__()
-
+        self.hyperparams = hyperparams
         self.gconv1 = GATConv(num_node_features, hyperparams["num_hidden_features"])
         self.gconv2 = GATConv(
             hyperparams["num_hidden_features"], hyperparams["num_hidden_features"]
         )
-        self.out = Linear(hyperparams["num_hidden_features"], 1)
+        self.dropout = torch.nn.Dropout(0.2)
+        self.out = Linear(
+            hyperparams["num_hidden_features"] * hyperparams["size_subgraph_samples"], 1
+        )
 
     def forward(self, x, edge_index):
         # x, edge_index = data.x, data.edge_index
@@ -75,16 +79,21 @@ class GAT(torch.nn.Module):
         # First Message Passing Layer (Transformation)
         x = self.gconv1(x, edge_index)
         x = x.relu()
+        x = self.dropout(x)
         # x = F.dropout(x, p=0.5, training=self.training)
 
         # Second Message Passing Layer
         x = self.gconv2(x, edge_index)
         x = x.relu()
-        # x = F.dropout(x, p=0.5, training=self.training)
+        x = self.dropout(x)
 
         # Output layer
         # x = F.mse_loss()
-        # x = tf.reshape(h, (int(h.shape[0] / 4), (4 * 24))) MAKE THIS IN PYTORCH?
+        # Reshape layer, to account for graph-level predictions,
+        # since we're given concatenated subgraph samples each mini batch
+        a = int(x.shape[0] / self.hyperparams["size_subgraph_samples"])
+        b = int(x.shape[1] * self.hyperparams["size_subgraph_samples"])
+        x = torch.reshape(x, (a, b))
         out = self.out(x)
         return out
 
